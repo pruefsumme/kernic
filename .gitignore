@@ -1,0 +1,13 @@
+node_modules
+
+# Local runtime data (project files, artifacts, package cache)
+/data
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db

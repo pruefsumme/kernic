@@ -1,0 +1,21 @@
+{
+	"name": "kern",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Self-hosted, Git-first Typst authoring workspace",
+	"packageManager": "pnpm@11.28.4",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"dev": "pnpm --parallel --filter @kern/web --filter @kern/worker dev",
+		"dev:web": "pnpm --filter @kern/web dev",
+		"dev:worker": "pnpm --filter @kern/worker dev",
+		"build": "pnpm --filter @kern/web build",
+		"check": "pnpm -r check",
+		"lint": "pnpm -r lint",
+		"test": "pnpm -r test",
+		"migrate": "pnpm --filter @kern/web migrate"
+	}
+}
