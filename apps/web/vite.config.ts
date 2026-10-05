@@ -10,7 +10,9 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// One .env at the repository root serves the app and the worker.
+			env: { dir: '../..' }
 		})
 	],
 	test: {

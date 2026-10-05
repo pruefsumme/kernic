@@ -1,0 +1,23 @@
+# Development services only. The app and worker run on the host with `pnpm dev`.
+name: kernic-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: kernic
+      POSTGRES_PASSWORD: kernic
+      POSTGRES_DB: kernic
+    ports:
+      - '127.0.0.1:54329:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # -h makes this fail during first-run init, when Postgres only listens on its socket.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U kernic -d kernic']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
