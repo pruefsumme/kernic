@@ -59,8 +59,8 @@ export async function detectToolchain(typstBin: string, sandbox: SandboxMode): P
 	if (sandbox === 'bwrap' && !bwrapPath) {
 		// Refuse to start rather than silently compile untrusted documents unsandboxed.
 		throw new Error(
-			'KERN_WORKER_SANDBOX=bwrap but bubblewrap is not installed. Install it, or set ' +
-				'KERN_WORKER_SANDBOX=none when the worker already runs in a locked-down container.'
+			'KERNIC_WORKER_SANDBOX=bwrap but bubblewrap is not installed. Install it, or set ' +
+				'KERNIC_WORKER_SANDBOX=none when the worker already runs in a locked-down container.'
 		);
 	}
 
@@ -187,7 +187,7 @@ export function buildCompileCommand(
 		'/tmp',
 		'--ro-bind',
 		toolchain.typstPath,
-		'/kern/typst',
+		'/kernic/typst',
 		'--ro-bind',
 		paths.sourceDir,
 		inside.sourceDir,
@@ -201,7 +201,7 @@ export function buildCompileCommand(
 	if (paths.packageDir && inside.packageDir) {
 		bwrapArgs.push('--ro-bind', paths.packageDir, inside.packageDir);
 	}
-	bwrapArgs.push('--chdir', inside.sourceDir, '--', '/kern/typst');
+	bwrapArgs.push('--chdir', inside.sourceDir, '--', '/kernic/typst');
 
 	return {
 		file: toolchain.prlimitPath,

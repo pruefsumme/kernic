@@ -46,36 +46,36 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min = 1
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
-	const token = env.KERN_WORKER_TOKEN ?? '';
+	const token = env.KERNIC_WORKER_TOKEN ?? '';
 	if (token.length < 24) {
-		throw new Error('KERN_WORKER_TOKEN must be set to a random string of at least 24 characters');
+		throw new Error('KERNIC_WORKER_TOKEN must be set to a random string of at least 24 characters');
 	}
 
-	const sandbox = env.KERN_WORKER_SANDBOX ?? 'bwrap';
+	const sandbox = env.KERNIC_WORKER_SANDBOX ?? 'bwrap';
 	if (sandbox !== 'bwrap' && sandbox !== 'none') {
-		throw new Error(`KERN_WORKER_SANDBOX must be "bwrap" or "none", got "${sandbox}"`);
+		throw new Error(`KERNIC_WORKER_SANDBOX must be "bwrap" or "none", got "${sandbox}"`);
 	}
 
 	return {
-		host: env.KERN_WORKER_HOST ?? '127.0.0.1',
-		port: integer(env, 'KERN_WORKER_PORT', 3101),
+		host: env.KERNIC_WORKER_HOST ?? '127.0.0.1',
+		port: integer(env, 'KERNIC_WORKER_PORT', 3101),
 		token,
-		workDir: path.resolve(env.KERN_WORKER_DIR ?? path.join(tmpdir(), 'kern-worker')),
-		typstBin: env.KERN_TYPST_BIN ?? 'typst',
+		workDir: path.resolve(env.KERNIC_WORKER_DIR ?? path.join(tmpdir(), 'kernic-worker')),
+		typstBin: env.KERNIC_TYPST_BIN ?? 'typst',
 		sandbox,
-		packageDir: env.KERN_WORKER_PACKAGE_DIR ? path.resolve(env.KERN_WORKER_PACKAGE_DIR) : null,
+		packageDir: env.KERNIC_WORKER_PACKAGE_DIR ? path.resolve(env.KERNIC_WORKER_PACKAGE_DIR) : null,
 		limits: {
-			timeoutMs: integer(env, 'KERN_COMPILE_TIMEOUT_MS', 20_000),
-			memoryBytes: integer(env, 'KERN_COMPILE_MEMORY_MB', 4096) * MiB,
-			outputBytes: integer(env, 'KERN_COMPILE_OUTPUT_MB', 48) * MiB,
-			maxPages: integer(env, 'KERN_COMPILE_MAX_PAGES', 1000),
-			maxSnapshotFiles: integer(env, 'KERN_SNAPSHOT_MAX_FILES', 5000),
-			maxSnapshotBytes: integer(env, 'KERN_SNAPSHOT_MAX_MB', 256) * MiB,
-			maxBlobBytes: integer(env, 'KERN_BLOB_MAX_MB', 32) * MiB,
-			blobCacheBytes: integer(env, 'KERN_BLOB_CACHE_MB', 1024) * MiB,
-			maxConcurrent: integer(env, 'KERN_WORKER_CONCURRENCY', 2),
-			maxQueued: integer(env, 'KERN_WORKER_QUEUE', 16, 0),
-			typstJobs: integer(env, 'KERN_TYPST_JOBS', 2)
+			timeoutMs: integer(env, 'KERNIC_COMPILE_TIMEOUT_MS', 20_000),
+			memoryBytes: integer(env, 'KERNIC_COMPILE_MEMORY_MB', 4096) * MiB,
+			outputBytes: integer(env, 'KERNIC_COMPILE_OUTPUT_MB', 48) * MiB,
+			maxPages: integer(env, 'KERNIC_COMPILE_MAX_PAGES', 1000),
+			maxSnapshotFiles: integer(env, 'KERNIC_SNAPSHOT_MAX_FILES', 5000),
+			maxSnapshotBytes: integer(env, 'KERNIC_SNAPSHOT_MAX_MB', 256) * MiB,
+			maxBlobBytes: integer(env, 'KERNIC_BLOB_MAX_MB', 32) * MiB,
+			blobCacheBytes: integer(env, 'KERNIC_BLOB_CACHE_MB', 1024) * MiB,
+			maxConcurrent: integer(env, 'KERNIC_WORKER_CONCURRENCY', 2),
+			maxQueued: integer(env, 'KERNIC_WORKER_QUEUE', 16, 0),
+			typstJobs: integer(env, 'KERNIC_TYPST_JOBS', 2)
 		}
 	};
 }

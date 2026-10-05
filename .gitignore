@@ -1,7 +1,7 @@
 node_modules
 
 # Local runtime data (project files, artifacts, package cache)
-/data
+data/
 
 # Env
 .env

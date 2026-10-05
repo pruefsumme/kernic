@@ -6,7 +6,7 @@ const { server, toolchain } = await createWorker(config);
 
 server.listen(config.port, config.host, () => {
 	console.log(
-		`kern worker listening on http://${config.host}:${config.port} ` +
+		`kernic worker listening on http://${config.host}:${config.port} ` +
 			`(typst ${toolchain.typstVersion}, sandbox: ${config.sandbox})`
 	);
 	if (config.sandbox === 'none') {

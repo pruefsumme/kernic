@@ -18,11 +18,11 @@ interface Harness {
 }
 
 async function startWorker(env: Record<string, string> = {}): Promise<Harness> {
-	const workDir = await mkdtemp(path.join(tmpdir(), 'kern-worker-test-'));
+	const workDir = await mkdtemp(path.join(tmpdir(), 'kernic-worker-test-'));
 	const config: WorkerConfig = loadConfig({
-		KERN_WORKER_TOKEN: TOKEN,
-		KERN_WORKER_DIR: workDir,
-		KERN_WORKER_SANDBOX: process.env.KERN_WORKER_SANDBOX ?? 'bwrap',
+		KERNIC_WORKER_TOKEN: TOKEN,
+		KERNIC_WORKER_DIR: workDir,
+		KERNIC_WORKER_SANDBOX: process.env.KERNIC_WORKER_SANDBOX ?? 'bwrap',
 		...env
 	});
 	const { server } = await createWorker(config);
@@ -108,7 +108,7 @@ describe('compile worker', () => {
 	test('compiles a multi-file project to one SVG per page', async () => {
 		const { status, body } = await compile(harness, {
 			'main.typ': '#import "parts/title.typ": title\n= #title\n#pagebreak()\nSecond page',
-			'parts/title.typ': '#let title = "Kern"'
+			'parts/title.typ': '#let title = "Kernic"'
 		});
 
 		assert.equal(status, 200);
@@ -213,7 +213,7 @@ describe('compile worker', () => {
 
 describe('compile limits', () => {
 	test('stops a compile that exceeds the time limit', async () => {
-		const harness = await startWorker({ KERN_COMPILE_TIMEOUT_MS: '1500' });
+		const harness = await startWorker({ KERNIC_COMPILE_TIMEOUT_MS: '1500' });
 		try {
 			const { body } = await compile(harness, {
 				// Typst rejects unbounded `while` loops itself, so keep it busy with nested ranges.
@@ -229,7 +229,7 @@ describe('compile limits', () => {
 	});
 
 	test('rejects blobs larger than the configured limit', async () => {
-		const harness = await startWorker({ KERN_BLOB_MAX_MB: '1' });
+		const harness = await startWorker({ KERNIC_BLOB_MAX_MB: '1' });
 		try {
 			const content = Buffer.alloc(1024 * 1024 + 1, 'a');
 			const response = await fetch(`${harness.baseUrl}/blobs/${sha256(content)}`, {
@@ -246,7 +246,7 @@ describe('compile limits', () => {
 
 describe('bubblewrap sandbox', { skip: !existsSync('/usr/bin/bwrap') }, () => {
 	test('gives the compiler no network access', async () => {
-		const harness = await startWorker({ KERN_WORKER_SANDBOX: 'bwrap' });
+		const harness = await startWorker({ KERNIC_WORKER_SANDBOX: 'bwrap' });
 		try {
 			// Package downloads are the one way a Typst document can reach the network.
 			const { body } = await compile(harness, {

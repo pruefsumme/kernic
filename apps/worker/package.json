@@ -1,5 +1,5 @@
 {
-	"name": "@kern/worker",
+	"name": "@kernic/worker",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

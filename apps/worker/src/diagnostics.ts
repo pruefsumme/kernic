@@ -5,7 +5,7 @@ export interface Diagnostic {
 	message: string;
 	/** Project-relative path, or null when Typst reported no source location. */
 	path: string | null;
-	/** 1-based line and column, as printed by Typst. */
+	/** As printed by Typst: the line is 1-based, the column 0-based. */
 	line: number | null;
 	column: number | null;
 }

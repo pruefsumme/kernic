@@ -1,5 +1,5 @@
 {
-	"name": "kern",
+	"name": "kernic",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
@@ -9,13 +9,13 @@
 		"node": ">=24"
 	},
 	"scripts": {
-		"dev": "pnpm --parallel --filter @kern/web --filter @kern/worker dev",
-		"dev:web": "pnpm --filter @kern/web dev",
-		"dev:worker": "pnpm --filter @kern/worker dev",
-		"build": "pnpm --filter @kern/web build",
+		"dev": "pnpm --parallel --filter @kernic/web --filter @kernic/worker dev",
+		"dev:web": "pnpm --filter @kernic/web dev",
+		"dev:worker": "pnpm --filter @kernic/worker dev",
+		"build": "pnpm --filter @kernic/web build",
 		"check": "pnpm -r check",
 		"lint": "pnpm -r lint",
 		"test": "pnpm -r test",
-		"migrate": "pnpm --filter @kern/web migrate"
+		"migrate": "pnpm --filter @kernic/web migrate"
 	}
 }
