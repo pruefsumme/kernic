@@ -89,6 +89,8 @@ export class BlobStore {
 		});
 
 		try {
+			// Recreate the directory if it was removed while the worker was running.
+			await mkdir(this.#dir, { recursive: true });
 			await pipeline(body, meter, createWriteStream(tempPath, { mode: 0o600 }));
 			if (hash.digest('hex') !== sha256) {
 				throw new BlobError('hash-mismatch', 'blob content does not match its sha256');
