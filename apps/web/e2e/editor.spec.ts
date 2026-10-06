@@ -1,12 +1,14 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import {
 	appendSource,
 	createProject,
 	editorText,
+	expectNoSidewaysScroll,
 	pages,
 	panel,
 	previewStatus,
-	saveState
+	saveState,
+	test
 } from './helpers.ts';
 
 test('a new project opens its main file and renders the template', async ({ page }) => {
@@ -58,6 +60,8 @@ test('a compile error is reported, located and cleared when fixed', async ({ pag
 	await appendSource(page, '\n#let broken = 1 +');
 	await expect(previewStatus(page)).toContainText('1 error');
 	await expect(previewStatus(page)).toContainText('last version that compiled');
+	// The longer status text must not push the layout wider than the window.
+	await expectNoSidewaysScroll(page);
 	// The last good page stays on screen.
 	await expect(pages(page)).toHaveCount(1);
 	await expect(page.locator('.cm-lintRange-error')).toBeVisible();
@@ -209,12 +213,78 @@ test('on a phone the editor shows one pane at a time', async ({ page }) => {
 
 	await expect(page.locator('.cm-content')).toBeVisible();
 	await expect(pages(page).first()).toBeHidden();
-	await page.getByRole('tab', { name: 'Preview' }).click();
+	await page.getByRole('button', { name: 'Preview', exact: true }).click();
 	await expect(pages(page).first()).toBeVisible();
 	await expect(page.locator('.cm-content')).toBeHidden();
 
-	const scrollsSideways = await page.evaluate(
-		() => document.documentElement.scrollWidth > window.innerWidth
+	await expectNoSidewaysScroll(page);
+});
+
+test('a failed save is visible, keeps the text, and retries when back online', async ({
+	page,
+	context
+}) => {
+	await createProject(page, 'Blank document', 'Offline');
+	await expect(saveState(page)).toContainText('Saved');
+
+	await context.setOffline(true);
+	await appendSource(page, '\nWritten while offline.');
+	await expect(saveState(page)).toContainText('Not saved');
+	await expect(
+		page.getByRole('alert').filter({ hasText: 'Your changes are not saved' })
+	).toBeVisible();
+	await expect(page.locator('.cm-content')).toContainText('Written while offline.');
+
+	await context.setOffline(false);
+	await expect(saveState(page)).toContainText('Saved');
+	await page.reload();
+	await expect(page.locator('.cm-content')).toContainText('Written while offline.');
+});
+
+test('when compiling is unavailable the preview says so and can be retried', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Compile outage');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	await page.route('**/api/projects/*/compile', (route) =>
+		route.fulfill({
+			status: 503,
+			contentType: 'application/json',
+			body: JSON.stringify({ message: 'The compile service is restarting.' })
+		})
 	);
-	expect(scrollsSideways).toBe(false);
+	await appendSource(page, '\nMore text.');
+	await expect(previewStatus(page)).toContainText('Preview unavailable');
+	// The pages rendered before the outage stay visible.
+	await expect(pages(page)).toHaveCount(1);
+
+	await page.unroute('**/api/projects/*/compile');
+	await previewStatus(page).getByRole('button', { name: 'Try again' }).click();
+	await expect(previewStatus(page)).toContainText('Up to date');
+});
+
+test('the editor is usable from the keyboard', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Keyboard');
+
+	// The skip link is the first stop and leads past the navigation.
+	await page.keyboard.press('Tab');
+	await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
+
+	// Escape closes the panel attached to the rail.
+	const files = panel(page, 'Files');
+	await files.getByRole('button', { name: 'File', exact: true }).focus();
+	await page.keyboard.press('Escape');
+	await expect(files).toBeHidden();
+
+	// Formatting shortcuts edit the Typst markup.
+	await appendSource(page, '\nbold');
+	await page.keyboard.press('Shift+Home');
+	await page.keyboard.press('ControlOrMeta+b');
+	await expect(page.locator('.cm-content')).toContainText('*bold*');
+
+	// Escape, then Tab, leaves the editor instead of trapping focus. (With text
+	// selected, the first Escape only clears the selection.)
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('Tab');
+	await expect(page.locator('.cm-content')).not.toBeFocused();
 });

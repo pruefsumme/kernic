@@ -98,6 +98,7 @@
 {/snippet}
 
 <div class="shell">
+	<a class="skip" href="#content">Skip to content</a>
 	<nav class="rail" aria-label="Main">
 		<a class="mark" href="/" aria-label="Kernic, all projects">
 			<BrandMark size={26} />
@@ -143,11 +144,32 @@
 		{#if panel}
 			{@render panel()}
 		{/if}
-		<main class:scroll>{@render children()}</main>
+		<main id="content" tabindex="-1" class:scroll>{@render children()}</main>
 	</div>
 </div>
 
 <style>
+	.skip {
+		position: absolute;
+		top: var(--s-2);
+		left: var(--s-2);
+		z-index: 20;
+		padding: var(--s-2) var(--s-3);
+		border-radius: var(--radius);
+		background: var(--ink);
+		color: var(--surface);
+		font-size: var(--t-ui);
+		translate: 0 -200%;
+	}
+
+	.skip:focus {
+		translate: 0;
+	}
+
+	main:focus {
+		outline: none;
+	}
+
 	.shell {
 		display: grid;
 		grid-template-columns: var(--rail-width) minmax(0, 1fr);

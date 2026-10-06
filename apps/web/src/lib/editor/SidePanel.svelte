@@ -11,7 +11,14 @@
 	}: { title: string; onclose: () => void; actions?: Snippet; children: Snippet } = $props();
 </script>
 
-<aside aria-label={title}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<aside
+	aria-label={title}
+	onkeydown={(event) => {
+		// Escape closes the panel, unless a menu or dialog inside it handled the key.
+		if (event.key === 'Escape' && !event.defaultPrevented) onclose();
+	}}
+>
 	<header>
 		<h2>{title}</h2>
 		<div class="actions">

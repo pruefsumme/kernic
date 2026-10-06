@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { createProject } from './helpers.ts';
+import { expect } from '@playwright/test';
+import { createProject, test } from './helpers.ts';
 
 test('the dashboard lists, searches and sorts projects', async ({ page }) => {
 	await createProject(page, 'Letter', 'Zebra letter');

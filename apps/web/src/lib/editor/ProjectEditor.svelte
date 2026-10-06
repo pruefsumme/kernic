@@ -184,6 +184,13 @@
 </script>
 
 <svelte:window
+	onkeydown={(event) => {
+		// Save from anywhere on the screen, not only while the cursor is in the source.
+		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+			event.preventDefault();
+			void session.save();
+		}
+	}}
 	onbeforeunload={(event) => {
 		// Ask before closing the tab while edits have not reached the server.
 		if (session.saveState !== 'saved') event.preventDefault();
@@ -272,11 +279,16 @@
 			</div>
 		{/if}
 
-		<div class="tabs" role="tablist" aria-label="Pane">
-			<button role="tab" aria-selected={pane === 'source'} onclick={() => (pane = 'source')}>
+		<div class="tabs" role="group" aria-label="Show">
+			<button type="button" aria-pressed={pane === 'source'} onclick={() => (pane = 'source')}>
 				Source
 			</button>
-			<button role="tab" aria-selected={pane === 'preview'} onclick={() => (pane = 'preview')}>
+			<button
+				type="button"
+				aria-pressed={pane === 'preview'}
+				aria-label={session.errorCount > 0 ? `Preview (${session.errorCount} errors)` : undefined}
+				onclick={() => (pane = 'preview')}
+			>
 				Preview
 				{#if session.errorCount > 0}<span class="tab-flag">{session.errorCount}</span>{/if}
 			</button>
@@ -560,7 +572,7 @@
 			cursor: pointer;
 		}
 
-		.tabs button[aria-selected='true'] {
+		.tabs button[aria-pressed='true'] {
 			border-bottom-color: var(--accent);
 			color: var(--accent);
 		}

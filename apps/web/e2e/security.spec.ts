@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { baseURL } from './environment.ts';
-import { createProject } from './helpers.ts';
+import { createProject, test } from './helpers.ts';
 
 test('the API refuses requests without a session', async ({ browser }) => {
 	const anonymous = await browser.newContext({
