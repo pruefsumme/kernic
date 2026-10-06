@@ -116,7 +116,9 @@ export class EditorSession {
 		this.render = initial.render;
 	}
 
+	/** Call when the editor goes away. Edits still waiting for autosave are sent now. */
 	dispose(): void {
+		if (this.saveState === 'unsaved') void this.save();
 		clearTimeout(this.#saveTimer);
 		this.#abort.abort();
 	}

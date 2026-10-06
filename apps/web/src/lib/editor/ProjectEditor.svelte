@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { EditorView } from '@codemirror/view';
 	import { onMount, tick, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell, { type RailItem } from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -81,6 +81,11 @@
 
 	$effect(() => {
 		session.attachEditor(view ? () => view!.state.doc.toString() : null);
+	});
+
+	// Leaving for another screen must not drop edits typed within the autosave delay.
+	beforeNavigate(({ shallow }) => {
+		if (!shallow && session.saveState === 'unsaved') void session.save();
 	});
 
 	/** Opens a file and records it in the URL, so a reload or a shared link returns to it. */

@@ -69,8 +69,13 @@ async function request(url: string, init?: RequestInit): Promise<Response> {
 	if (response.ok) return response;
 
 	if (response.status === 401) {
-		// The session ended; signing in again returns to this page.
-		location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+		// Do not navigate to the sign-in page from here: that would discard edits
+		// that are still only in this tab.
+		throw new ApiError(
+			401,
+			'You have been signed out. Sign in again in another tab, then try again here.',
+			'signed-out'
+		);
 	}
 	const body = (await response.json().catch(() => null)) as {
 		message?: string;
