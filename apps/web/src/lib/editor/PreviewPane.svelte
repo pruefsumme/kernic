@@ -24,10 +24,28 @@
 		zoom = next ?? (direction === 1 ? ZOOM_STEPS.at(-1)! : ZOOM_STEPS[0]!);
 	}
 
-	function trackWidth(image: HTMLImageElement) {
-		const observer = new ResizeObserver(() => (firstPageWidth = image.clientWidth));
-		observer.observe(image);
-		return () => observer.disconnect();
+	/**
+	 * Records a page's size at 100% once its image has loaded, and for the first
+	 * page also its size on screen. Done with listeners rather than an `onload`
+	 * attribute, which the content security policy would block in server-rendered HTML.
+	 */
+	function measure(index: number) {
+		return (image: HTMLImageElement) => {
+			const record = () => {
+				if (image.naturalWidth > 0) naturalWidths[index] = image.naturalWidth;
+			};
+			record();
+			image.addEventListener('load', record);
+
+			const observer = new ResizeObserver(() => {
+				if (index === 0) firstPageWidth = image.clientWidth;
+			});
+			observer.observe(image);
+			return () => {
+				image.removeEventListener('load', record);
+				observer.disconnect();
+			};
+		};
 	}
 
 	const pages = $derived(
@@ -114,16 +132,14 @@
 		{#if pages.length > 0}
 			{#each pages as page, index (page.number)}
 				<img
-					{@attach index === 0 ? trackWidth : undefined}
+					{@attach measure(index)}
 					class="sheet"
+					class:fit={zoom === null}
 					src={page.url}
 					alt="Page {page.number}"
 					style:width={zoom === null
 						? undefined
 						: `${(naturalWidths[index] ?? naturalWidths[0] ?? 794) * zoom}px`}
-					class:fit={zoom === null}
-					onload={(event) =>
-						(naturalWidths[index] = (event.currentTarget as HTMLImageElement).naturalWidth)}
 				/>
 			{/each}
 		{:else if compiling || session.compile.status === 'idle'}
@@ -152,6 +168,7 @@
 <style>
 	.preview {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: auto auto minmax(0, 1fr);
 		height: 100%;
 		min-width: 0;
@@ -174,6 +191,7 @@
 		align-items: center;
 		gap: var(--s-2);
 		min-width: 0;
+		overflow: hidden;
 		font-size: var(--t-ui);
 		white-space: nowrap;
 	}

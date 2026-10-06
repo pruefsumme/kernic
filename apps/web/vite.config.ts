@@ -12,7 +12,24 @@ export default defineConfig({
 			},
 			adapter: adapter(),
 			// One .env at the repository root serves the app and the worker.
-			env: { dir: '../..' }
+			env: { dir: '../..' },
+			// Pages may only load code, styles, fonts and images from this server.
+			// SvelteKit adds a nonce for its own inline script. Inline styles stay
+			// allowed because the editor (CodeMirror) injects its theme at runtime.
+			csp: {
+				directives: {
+					'default-src': ['self'],
+					'script-src': ['self'],
+					'style-src': ['self', 'unsafe-inline'],
+					'img-src': ['self', 'data:', 'blob:'],
+					'font-src': ['self'],
+					'connect-src': ['self'],
+					'object-src': ['none'],
+					'base-uri': ['self'],
+					'form-action': ['self'],
+					'frame-ancestors': ['none']
+				}
+			}
 		})
 	],
 	test: {
