@@ -89,6 +89,7 @@
 			class:active={item.active}
 			type="button"
 			aria-pressed={item.active ?? false}
+			aria-label={item.badge ? `${item.label} (${item.badge})` : undefined}
 			onclick={item.onclick}
 		>
 			{@render content()}
