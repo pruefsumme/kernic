@@ -41,7 +41,12 @@ Checks:
 pnpm check   # type-check both packages
 pnpm lint    # prettier + eslint
 pnpm test    # unit tests; the worker tests compile real documents with the Typst CLI
+pnpm test:e2e  # browser tests against the production build (needs the dev PostgreSQL)
 ```
+
+The end-to-end tests build the app, start it together with a worker on separate ports, and use
+their own database (`kernic_test`, created and wiped automatically) and a temporary data
+directory. They need Playwright's Chromium: `pnpm --filter @kernic/web exec playwright install chromium`.
 
 Configuration is read from environment variables; `.env.example` lists the ones needed for
 development, and `apps/web/src/env.ts` and `apps/worker/src/config.ts` describe all of them.

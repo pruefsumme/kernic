@@ -16,6 +16,7 @@
 		"check": "pnpm -r check",
 		"lint": "pnpm -r lint",
 		"test": "pnpm -r test",
-		"migrate": "pnpm --filter @kernic/web migrate"
+		"migrate": "pnpm --filter @kernic/web migrate",
+		"test:e2e": "pnpm --filter @kernic/web test:e2e"
 	}
 }

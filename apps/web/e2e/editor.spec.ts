@@ -1,0 +1,220 @@
+import { expect, test } from '@playwright/test';
+import {
+	appendSource,
+	createProject,
+	editorText,
+	pages,
+	panel,
+	previewStatus,
+	saveState
+} from './helpers.ts';
+
+test('a new project opens its main file and renders the template', async ({ page }) => {
+	await createProject(page, 'Report', 'Renders');
+
+	await expect(page).toHaveURL(/file=main\.typ/);
+	await expect(previewStatus(page)).toContainText('Up to date');
+	await expect(pages(page)).toHaveCount(4);
+	await expect(page.getByRole('button', { name: 'Files', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+});
+
+test('typing saves automatically and updates the preview and the outline', async ({ page }) => {
+	await createProject(page, 'Report', 'Autosave');
+	await expect(pages(page)).toHaveCount(4);
+
+	await appendSource(page, '\n= Added chapter\nMore text.\n');
+	await expect(saveState(page)).toContainText('Unsaved changes');
+	await expect(saveState(page)).toContainText('Saved');
+	await expect(pages(page)).toHaveCount(5);
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	await page.getByRole('button', { name: 'Outline' }).click();
+	await expect(panel(page, 'Outline').getByRole('button', { name: 'Added chapter' })).toBeVisible();
+
+	// The text is on the server, not only in this tab.
+	await page.reload();
+	await expect(page.locator('.cm-content')).toContainText('Added chapter');
+});
+
+test('edits typed just before leaving the editor are not lost', async ({ page }) => {
+	const id = await createProject(page, 'Blank document', 'Leave quickly');
+
+	await appendSource(page, '\nLast words before leaving.');
+	// Navigate within the autosave delay.
+	await page.getByRole('link', { name: 'Settings' }).click();
+	await expect(page).toHaveURL(/\/settings$/);
+
+	await page.goto(`/projects/${id}`);
+	await expect(page.locator('.cm-content')).toContainText('Last words before leaving.');
+});
+
+test('a compile error is reported, located and cleared when fixed', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Errors');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	await appendSource(page, '\n#let broken = 1 +');
+	await expect(previewStatus(page)).toContainText('1 error');
+	await expect(previewStatus(page)).toContainText('last version that compiled');
+	// The last good page stays on screen.
+	await expect(pages(page)).toHaveCount(1);
+	await expect(page.locator('.cm-lintRange-error')).toBeVisible();
+
+	await page.getByRole('button', { name: /^Issues/ }).click();
+	const issue = panel(page, 'Issues').getByRole('button', { name: /expected expression/ });
+	await expect(issue).toContainText('main.typ, line 5');
+	await issue.click();
+
+	await appendSource(page, ' 2');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	await expect(panel(page, 'Issues')).toContainText('No errors or warnings');
+});
+
+test('a file changed elsewhere is not overwritten without asking', async ({ page }) => {
+	const id = await createProject(page, 'Blank document', 'Conflict');
+	await expect(saveState(page)).toContainText('Saved');
+	const fileUrl = `/api/projects/${id}/files/main.typ`;
+	const origin = new URL(page.url()).origin;
+	const writeElsewhere = (text: string) =>
+		page.request.put(fileUrl, { data: text, headers: { origin, 'content-type': 'text/plain' } });
+
+	// Someone else replaces the file, then this tab keeps typing.
+	expect((await writeElsewhere('= Written elsewhere\n')).ok()).toBe(true);
+	await appendSource(page, '\nMy local edit.');
+
+	const banner = page.getByRole('alert').filter({ hasText: 'was changed somewhere else' });
+	await expect(banner).toBeVisible();
+	await expect(saveState(page)).toContainText('Conflict');
+	expect(await (await page.request.get(fileUrl)).text()).toBe('= Written elsewhere\n');
+
+	// Keeping the local version is an explicit choice.
+	await banner.getByRole('button', { name: 'Keep mine, overwrite' }).click();
+	await expect(saveState(page)).toContainText('Saved');
+	expect(await (await page.request.get(fileUrl)).text()).toContain('My local edit.');
+
+	// The other choice: take the server's version.
+	expect((await writeElsewhere('= Second remote version\n')).ok()).toBe(true);
+	await appendSource(page, '\nAnother local edit.');
+	await expect(banner).toBeVisible();
+	await banner.getByRole('button', { name: 'Discard mine, load theirs' }).click();
+	await expect(page.locator('.cm-content')).toContainText('Second remote version');
+	expect(await editorText(page)).not.toContain('Another local edit.');
+	await expect(saveState(page)).toContainText('Saved');
+});
+
+test('files can be created, renamed and deleted without overwriting', async ({ page }) => {
+	await createProject(page, 'Report', 'File operations');
+	const files = panel(page, 'Files');
+
+	await files.getByRole('button', { name: 'File', exact: true }).click();
+	await page.getByLabel('File name').fill('notes.typ');
+	await page.getByRole('button', { name: 'Create file' }).click();
+	await expect(page).toHaveURL(/file=notes\.typ/);
+	await expect(files.getByRole('button', { name: 'notes.typ', exact: true })).toBeVisible();
+
+	// A second file with the same name is refused.
+	await files.getByRole('button', { name: 'File', exact: true }).click();
+	await page.getByLabel('File name').fill('notes.typ');
+	await page.getByRole('button', { name: 'Create file' }).click();
+	await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+	await page.getByRole('button', { name: 'Cancel' }).click();
+
+	// Paths that would leave the project are refused.
+	await files.getByRole('button', { name: 'File', exact: true }).click();
+	await page.getByLabel('File name').fill('../outside.typ');
+	await page.getByRole('button', { name: 'Create file' }).click();
+	await expect(page.getByRole('dialog').getByRole('alert')).toContainText('".."');
+	await page.getByRole('button', { name: 'Cancel' }).click();
+
+	await files.getByRole('button', { name: 'Actions for notes.typ' }).click();
+	await page.getByRole('menuitem', { name: 'Rename or move' }).click();
+	await page.getByLabel('Path').fill('chapters/notes.typ');
+	await page.getByRole('button', { name: 'Rename', exact: true }).click();
+	await expect(page).toHaveURL(/file=chapters%2Fnotes\.typ/);
+
+	await files.getByRole('button', { name: 'Actions for notes.typ' }).click();
+	await page.getByRole('menuitem', { name: 'Delete' }).click();
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(page).toHaveURL(/file=main\.typ/);
+	await expect(files.getByRole('button', { name: 'notes.typ', exact: true })).toHaveCount(0);
+});
+
+test('uploads are stored, shown, and never replace an existing file', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Uploads');
+	const files = panel(page, 'Files');
+	const pixel = Buffer.from(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+		'base64'
+	);
+	const upload = (name: string, buffer: Buffer) =>
+		page.locator('input[type=file]').setInputFiles({ name, mimeType: 'image/png', buffer });
+
+	await upload('dot.png', pixel);
+	await expect(files.getByRole('status')).toContainText('1 file uploaded.');
+	await files.getByRole('button', { name: 'dot.png', exact: true }).click();
+	await expect(page.locator('.asset img')).toBeVisible();
+
+	await upload('dot.png', pixel);
+	await expect(files.getByRole('status')).toContainText('was not uploaded');
+
+	// Larger than the Node adapter's default request limit of 512 KB.
+	await upload('large.png', Buffer.concat([pixel, Buffer.alloc(2 * 1024 * 1024)]));
+	await expect(files.getByRole('status')).toContainText('1 file uploaded.');
+});
+
+test('export produces a PDF and a ZIP of the project', async ({ page }) => {
+	await createProject(page, 'Article', 'Export me');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	await page.getByRole('button', { name: 'Export' }).click();
+	const [pdf] = await Promise.all([
+		page.waitForEvent('download'),
+		page.getByRole('menuitem', { name: 'PDF' }).click()
+	]);
+	expect(pdf.suggestedFilename()).toBe('Export me.pdf');
+	const pdfStream = await pdf.createReadStream();
+	const pdfHead = await new Promise<Buffer>((resolve) => pdfStream.once('data', resolve));
+	expect(pdfHead.subarray(0, 5).toString()).toBe('%PDF-');
+
+	await page.getByRole('button', { name: 'Export' }).click();
+	const [zip] = await Promise.all([
+		page.waitForEvent('download'),
+		page.getByRole('menuitem', { name: 'All files (ZIP)' }).click()
+	]);
+	const zipStream = await zip.createReadStream();
+	const zipHead = await new Promise<Buffer>((resolve) => zipStream.once('data', resolve));
+	expect(zipHead.subarray(0, 2).toString()).toBe('PK');
+});
+
+test('zoom changes the size of the rendered pages', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Zoom');
+	await expect(pages(page)).toHaveCount(1);
+	const width = () =>
+		pages(page)
+			.first()
+			.evaluate((image) => image.clientWidth);
+
+	const fitted = await width();
+	await page.getByRole('button', { name: 'Zoom in' }).click();
+	expect(await width()).toBeGreaterThan(fitted);
+	await page.getByRole('button', { name: 'Fit width' }).click();
+	expect(await width()).toBe(fitted);
+});
+
+test('on a phone the editor shows one pane at a time', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 800 });
+	await createProject(page, 'Blank document', 'Phone');
+
+	await expect(page.locator('.cm-content')).toBeVisible();
+	await expect(pages(page).first()).toBeHidden();
+	await page.getByRole('tab', { name: 'Preview' }).click();
+	await expect(pages(page).first()).toBeVisible();
+	await expect(page.locator('.cm-content')).toBeHidden();
+
+	const scrollsSideways = await page.evaluate(
+		() => document.documentElement.scrollWidth > window.innerWidth
+	);
+	expect(scrollsSideways).toBe(false);
+});
