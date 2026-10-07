@@ -111,6 +111,9 @@
 					<small>Article, report, letter</small>
 				</span>
 			</button>
+			{#if canCreate}
+				<a class="import" href="/import"><Icon name="upload" size={16} /> Import a ZIP archive</a>
+			{/if}
 		</section>
 		{#if !canCreate}
 			<p class="notice">
@@ -280,6 +283,15 @@
 
 	.start:hover {
 		background: var(--sunken);
+	}
+
+	.import {
+		display: inline-flex;
+		align-items: center;
+		align-self: center;
+		gap: var(--s-2);
+		margin-left: var(--s-2);
+		font-size: var(--t-ui);
 	}
 
 	.start.primary {

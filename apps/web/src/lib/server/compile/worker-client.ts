@@ -60,6 +60,19 @@ async function uploadBlob(sha256: string, absolutePath: string): Promise<void> {
 	}
 }
 
+/** Adds what the user can do about errors the compiler reports tersely. */
+function explainDiagnostic(diagnostic: Diagnostic): Diagnostic {
+	if (diagnostic.message.startsWith('failed to download package')) {
+		return {
+			...diagnostic,
+			message:
+				'This package is not installed on the server. Documents are compiled without ' +
+				'network access, so packages cannot be downloaded during a compile.'
+		};
+	}
+	return diagnostic;
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -88,7 +101,10 @@ export async function compileSnapshot(request: {
 			body
 		});
 
-		if (response.status === 200) return (await response.json()) as WorkerResult;
+		if (response.status === 200) {
+			const result = (await response.json()) as WorkerResult;
+			return { ...result, diagnostics: result.diagnostics.map(explainDiagnostic) };
+		}
 
 		if (response.status === 409) {
 			const { missing } = (await response.json()) as { missing: string[] };

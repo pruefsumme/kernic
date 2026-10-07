@@ -12,6 +12,7 @@ import { startJobDispatcher } from '#lib/server/compile/jobs.ts';
 import { dataDir } from '#lib/server/config.ts';
 import { sql } from '#lib/server/db/client.ts';
 import { bundledMigrations, migrate } from '#lib/server/db/migrate.ts';
+import { startImportCleanup } from '#lib/server/imports/imports.ts';
 
 export const init: ServerInit = async () => {
 	// Migrate before serving anything, so an upgrade is: replace the image, start it.
@@ -22,6 +23,7 @@ export const init: ServerInit = async () => {
 	await deleteExpiredSessions();
 	await prepareSetup();
 	await startJobDispatcher();
+	await startImportCleanup();
 };
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);

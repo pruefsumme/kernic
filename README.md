@@ -61,10 +61,12 @@ Working:
 - Autosave with conflict detection: a file changed elsewhere is never overwritten silently
 - Live preview through the sandboxed worker, with compiler errors and warnings linked to the source
 - PDF export and ZIP download of all project files
+- Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
+  and missing files and compiled once; the project is only created after you confirm
 
 Not built yet:
 
-- Importing existing projects (ZIP, Git) with a dry-run check
+- Importing from a Git repository
 - Git checkpoints and Gitea/Forgejo integration
 - Team workspaces in the UI, sharing and review
 - Typst packages from Typst Universe (the sandbox has no network access)

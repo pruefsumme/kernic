@@ -306,25 +306,12 @@ async function runJob(job: CompileJob): Promise<void> {
 
 	await finishJob(job, {
 		status: result.ok ? 'succeeded' : 'failed',
-		diagnostics: result.diagnostics.map(explainDiagnostic),
+		diagnostics: result.diagnostics,
 		pageCount,
 		typstVersion: result.typstVersion,
 		durationMs: result.durationMs
 	});
 	await pruneJobs(job.projectId, job.format);
-}
-
-/** Adds what the user can do about errors the compiler reports tersely. */
-function explainDiagnostic(diagnostic: Diagnostic): Diagnostic {
-	if (diagnostic.message.startsWith('failed to download package')) {
-		return {
-			...diagnostic,
-			message:
-				'This package is not installed on the server. Documents are compiled without ' +
-				'network access, so packages cannot be downloaded during a compile.'
-		};
-	}
-	return diagnostic;
 }
 
 async function finishJob(

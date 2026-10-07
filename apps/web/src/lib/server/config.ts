@@ -31,3 +31,8 @@ export function projectDir(projectId: string): string {
 export function projectArtifactsDir(projectId: string): string {
 	return path.join(dataDir, 'artifacts', projectId);
 }
+
+/** Staging area of one upload that is being analysed or awaits confirmation. */
+export function importDir(importId: string): string {
+	return path.join(dataDir, 'imports', importId);
+}
