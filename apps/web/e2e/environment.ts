@@ -5,14 +5,21 @@ import path from 'node:path';
 
 export const appPort = 5183;
 export const workerPort = 3183;
-export const baseURL = `http://localhost:${appPort}`;
+
+/**
+ * Set KERNIC_E2E_BASE_URL to run the suite against an already running, freshly
+ * installed deployment (for example the Docker Compose stack) instead of
+ * starting the app here. Pass that deployment's setup token as KERNIC_E2E_SETUP_TOKEN.
+ */
+export const externalBaseURL = process.env.KERNIC_E2E_BASE_URL?.replace(/\/+$/, '');
+export const baseURL = externalBaseURL ?? `http://localhost:${appPort}`;
 
 export const databaseUrl =
 	process.env.KERNIC_TEST_DATABASE_URL ?? 'postgres://kernic:kernic@127.0.0.1:54329/kernic_test';
 export const dataDir = path.join(tmpdir(), 'kernic-e2e-data');
 export const workerDir = path.join(tmpdir(), 'kernic-e2e-worker');
 
-export const setupToken = 'e2e-setup-token';
+export const setupToken = process.env.KERNIC_E2E_SETUP_TOKEN ?? 'e2e-setup-token';
 export const workerToken = 'e2e-worker-token-e2e-worker-token';
 
 export const admin = {

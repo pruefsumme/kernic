@@ -1,13 +1,9 @@
 import { expect } from '@playwright/test';
-import { baseURL } from './environment.ts';
 import { createProject, test } from './helpers.ts';
 
 test('the API refuses requests without a session', async ({ browser }) => {
-	const anonymous = await browser.newContext({
-		storageState: { cookies: [], origins: [] },
-		baseURL,
-		extraHTTPHeaders: { 'x-forwarded-proto': 'http' }
-	});
+	// A context of its own, so it carries no session; other options come from the config.
+	const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const response = await anonymous.request.get(
 		'/api/projects/00000000-0000-0000-0000-000000000000/tree'
 	);
