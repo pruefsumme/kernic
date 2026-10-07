@@ -3,8 +3,11 @@
 A self-hosted, Git-first workspace for writing [Typst](https://typst.app/docs/) documents: edit a
 multi-file project in the browser, see the rendered pages next to the source, and export a PDF.
 
-> Early development. The single-user editing loop works; Git checkpoints, team sharing, real-time
-> collaboration and the production deployment are not built yet. See [Status](#status).
+> Early development. The single-user editing loop works and can be self-hosted; Typst packages,
+> Git checkpoints, team sharing and real-time collaboration are not built yet. See
+> [Status](#status) and the [backlog](docs/backlog.md).
+
+To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**.
 
 ## How it is put together
 
@@ -64,6 +67,8 @@ Working:
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
 
+- Docker Compose deployment with an isolated compile worker, and backup and restore scripts
+
 Not built yet:
 
 - Importing from a Git repository
@@ -71,4 +76,3 @@ Not built yet:
 - Team workspaces in the UI, sharing and review
 - Typst packages from Typst Universe (the sandbox has no network access)
 - Tinymist language server features, real-time collaboration
-- Production Docker Compose deployment, backup and upgrade guides

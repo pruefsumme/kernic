@@ -1,0 +1,13 @@
+# Keep build contexts small and free of local state and secrets.
+.git
+**/node_modules
+**/.svelte-kit
+**/build
+**/data
+**/e2e/.auth
+**/e2e/.results
+.env
+.env.*
+!.env.example
+deploy/.env
+docs

@@ -1,0 +1,9 @@
+# The single public entry point. Caddy obtains and renews TLS certificates
+# automatically when KERNIC_SITE_ADDRESS is a domain name.
+{$KERNIC_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Caddy passes the public protocol, host and client address to the app in
+	# X-Forwarded-* headers; the app relies on them for its origin checks.
+	reverse_proxy app:3000
+}

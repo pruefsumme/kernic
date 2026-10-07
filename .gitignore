@@ -11,3 +11,7 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Deployment secrets and local backups
+/deploy/.env
+/deploy/backups/

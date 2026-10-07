@@ -8,21 +8,17 @@ that works on typst.app should work here, and work in it must never be lost.
 
 ## Next
 
-1. **Docker Compose deployment** — images for the app and the worker, Caddy in front, PostgreSQL;
-   worker container without network, secrets or host mounts. Docs for setup, backup, restore and
-   upgrade, with the restore actually tested.
-
-2. **Typst packages (Typst Universe)** — the largest functional gap compared with typst.app: most
+1. **Typst packages (Typst Universe)** — the largest functional gap compared with typst.app: most
    thesis templates are packages. Fetch `@preview` packages outside the compile sandbox from the
    fixed registry host, verify and cache them, and hand them to the worker read-only. Admin switch
    to disable or pin the registry. The import report should then say "will be installed" instead
    of "not available".
 
-3. **Version history and Git checkpoints** — explicit checkpoints of a project as Git commits
+2. **Version history and Git checkpoints** — explicit checkpoints of a project as Git commits
    (local repository per project first), a history view with diff and restore, then push/pull to
    Gitea/Forgejo. This is also the safety net against accidental deletion and bad edits.
 
-4. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
+3. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
    - Threat model written down: untrusted documents, archives, uploads, other users, the network.
    - Authentication and sessions: cookie flags, session lifetime, rate limits, password policy,
      account lockout behaviour, setup token handling.
@@ -39,7 +35,7 @@ that works on typst.app should work here, and work in it must never be lost.
    - Dependency review and a `SECURITY.md` describing what is and is not protected.
    Outcome: a written report in `docs/`, issues fixed or listed with severity, tests for each fix.
 
-5. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
+4. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
    - Visual refinement: spacing rhythm, typography details, icon consistency, hover/active/focus
      states, the empty and loading states, dialog and menu styling.
    - Motion with intent and restraint: panel open/close, menu and dialog entrance, preview page
@@ -49,16 +45,16 @@ that works on typst.app should work here, and work in it must never be lost.
      optimistic file-tree updates.
    - A review of every screen at desktop, tablet and phone widths after the changes.
 
-6. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
+5. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
    admin user management, audit events.
 
-7. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
+6. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
    diagnostics while typing, behind the existing editor adapter.
 
-8. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
+7. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
    a document, presence and cursors, revocation when permissions change.
 
-9. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
+8. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
    readiness details, structured logs with request ids, quotas per workspace.
 
 ## Smaller items
@@ -78,3 +74,5 @@ that works on typst.app should work here, and work in it must never be lost.
 - App shell with connected rail and top bar, dashboard, template picker, Kernic branding.
 - End-to-end test suite against the production build; content security policy; keyboard access.
 - ZIP import with a dry-run check (`8a3fe41`).
+- Docker Compose deployment (proxy, app, isolated worker, PostgreSQL) with self-hosting guide,
+  backup and restore scripts and a tested restore.

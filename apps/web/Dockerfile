@@ -1,0 +1,44 @@
+# Web app: SvelteKit built for Node.
+# Build from the repository root:  docker build -f apps/web/Dockerfile .
+
+FROM node:24-bookworm-slim AS build
+RUN corepack enable
+WORKDIR /repo
+
+# Install dependencies first, so this layer is reused while only sources change.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+RUN pnpm install --frozen-lockfile
+
+COPY apps/web apps/web
+RUN pnpm --filter @kernic/web build
+# Production dependencies only (the build bundles everything else).
+RUN pnpm --filter @kernic/web deploy --legacy --prod /out
+
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY --from=build /out/package.json ./
+COPY --from=build /out/node_modules ./node_modules
+COPY --from=build /repo/apps/web/build ./build
+RUN mkdir /data && chown node:node /data
+
+# The app is meant to sit behind the reverse proxy from deploy/compose.yaml,
+# which tells it the public protocol, host and client address. BODY_SIZE_LIMIT
+# must stay above the largest allowed project archive (KERNIC_MAX_PROJECT_MB).
+ENV NODE_ENV=production \
+	HOST=0.0.0.0 \
+	PORT=3000 \
+	BODY_SIZE_LIMIT=256M \
+	PROTOCOL_HEADER=x-forwarded-proto \
+	HOST_HEADER=x-forwarded-host \
+	ADDRESS_HEADER=x-forwarded-for \
+	XFF_DEPTH=1 \
+	KERNIC_DATA_DIR=/data
+
+USER node
+VOLUME /data
+EXPOSE 3000
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
+	CMD node -e "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "build"]
