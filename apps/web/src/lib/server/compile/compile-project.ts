@@ -4,6 +4,7 @@ import { scanTypstSource } from '../imports/scan';
 import { resolvePackages, type PackageFailure } from '../packages/registry';
 import { snapshotTree, type Snapshot } from './snapshot';
 import {
+	SnapshotChangedError,
 	compileSnapshot,
 	type Diagnostic,
 	type OutputFormat,
@@ -87,7 +88,25 @@ async function explainPackageErrors(
 	return explained;
 }
 
+const MAX_ATTEMPTS = 4;
+
 export async function compileProject(
+	root: string,
+	entry: string,
+	format: OutputFormat
+): Promise<ProjectCompile> {
+	// Files may be saved or restored while a compile is being prepared. Start
+	// over from a fresh snapshot then, instead of compiling a mixture.
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await compileOnce(root, entry, format);
+		} catch (error) {
+			if (!(error instanceof SnapshotChangedError) || attempt === MAX_ATTEMPTS) throw error;
+		}
+	}
+}
+
+async function compileOnce(
 	root: string,
 	entry: string,
 	format: OutputFormat

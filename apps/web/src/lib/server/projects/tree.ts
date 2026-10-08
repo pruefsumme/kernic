@@ -106,8 +106,13 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
 				entries.push({ path: childPath, type: 'directory', size: 0 });
 				await walk(path.join(directory, child.name), childPath);
 			} else if (child.isFile()) {
-				const info = await fs.stat(path.join(directory, child.name));
-				entries.push({ path: childPath, type: 'file', size: info.size });
+				try {
+					const info = await fs.stat(path.join(directory, child.name));
+					entries.push({ path: childPath, type: 'file', size: info.size });
+				} catch (error) {
+					// Deleted or renamed by another request since the directory was read.
+					if (!isNotFound(error)) throw error;
+				}
 			}
 			// Symlinks, sockets and other special files are ignored entirely.
 		}
@@ -188,7 +193,12 @@ export async function writeTreeFile(
 	});
 
 	await ensureParentDirectories(root, relativePath);
-	const temporary = path.join(path.dirname(absolute), `.kernic-write-${randomUUID()}`);
+	// The temporary file lives beside the tree, not in it, so that a concurrent
+	// listing, snapshot or checkpoint never sees a half-written file. Being on
+	// the same file system, the rename into place is still atomic.
+	const temporaryDirectory = `${root}.tmp`;
+	await fs.mkdir(temporaryDirectory, { recursive: true });
+	const temporary = path.join(temporaryDirectory, randomUUID());
 	try {
 		await fs.writeFile(temporary, content, { flag: 'wx', mode: 0o640 });
 		await fs.rename(temporary, absolute);

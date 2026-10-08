@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { projectTreeDir, treeLimits } from '#lib/server/config.ts';
 import { requireProject } from '#lib/server/http.ts';
 import { InvalidPathError, normalizeProjectPath } from '#lib/server/projects/paths.ts';
+import { withProjectLock } from '#lib/server/projects/lock.ts';
 import { bumpRevision } from '#lib/server/projects/projects.ts';
 import { TreeError, writeTreeFile } from '#lib/server/projects/tree.ts';
 import type { RequestHandler } from './$types';
@@ -39,10 +40,10 @@ export const POST: RequestHandler = async (event) => {
 			if (file.size > treeLimits.maxFileBytes) {
 				throw new TreeError('file-too-large', 'The file is larger than this server allows.');
 			}
-			await writeTreeFile(root, target, new Uint8Array(await file.arrayBuffer()), {
-				limits: treeLimits,
-				baseHash: null
-			});
+			const content = new Uint8Array(await file.arrayBuffer());
+			await withProjectLock(project.id, () =>
+				writeTreeFile(root, target, content, { limits: treeLimits, baseHash: null })
+			);
 			results.push({ name: file.name, path: target, stored: true });
 		} catch (cause) {
 			if (cause instanceof TreeError || cause instanceof InvalidPathError) {

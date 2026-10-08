@@ -40,8 +40,13 @@ export async function snapshotTree(root: string): Promise<Snapshot> {
 	const files: SnapshotFile[] = [];
 	for (const entry of await listTree(root)) {
 		if (entry.type !== 'file') continue;
-		const { sha256, size } = await hashFile(path.join(root, ...entry.path.split('/')));
-		files.push({ path: entry.path, sha256, size });
+		try {
+			const { sha256, size } = await hashFile(path.join(root, ...entry.path.split('/')));
+			files.push({ path: entry.path, sha256, size });
+		} catch (error) {
+			// The file went away while the tree was being read; the snapshot is simply without it.
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+		}
 	}
 
 	const digest = createHash('sha256');

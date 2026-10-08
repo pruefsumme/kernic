@@ -1,5 +1,6 @@
 import { KERNIC_WORKER_TOKEN, KERNIC_WORKER_URL } from '$app/env/private';
-import { openAsBlob } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SnapshotFile } from './snapshot';
 
@@ -49,10 +50,32 @@ async function workerFetch(pathname: string, init: RequestInit): Promise<Respons
 	}
 }
 
+/**
+ * The files changed between taking the snapshot and sending them to the worker.
+ * The compile has to start over from a fresh snapshot.
+ */
+export class SnapshotChangedError extends Error {
+	constructor() {
+		super('The project files changed while they were being compiled.');
+	}
+}
+
 async function uploadBlob(sha256: string, absolutePath: string): Promise<void> {
+	// Read the file fully and check it still is what the snapshot recorded: a
+	// save or a restore may have replaced it in the meantime.
+	let content: Buffer;
+	try {
+		content = await readFile(absolutePath);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new SnapshotChangedError();
+		throw error;
+	}
+	if (createHash('sha256').update(content).digest('hex') !== sha256)
+		throw new SnapshotChangedError();
+
 	const response = await workerFetch(`/blobs/${sha256}`, {
 		method: 'PUT',
-		body: await openAsBlob(absolutePath)
+		body: new Uint8Array(content)
 	});
 	if (!response.ok) {
 		throw new WorkerUnavailableError(

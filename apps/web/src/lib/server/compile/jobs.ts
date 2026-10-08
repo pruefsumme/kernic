@@ -5,7 +5,12 @@ import { projectArtifactsDir, projectTreeDir } from '../config';
 import { sql } from '../db/client';
 import { isUuid } from '../projects/projects';
 import { compileProject } from './compile-project';
-import { WorkerUnavailableError, type Diagnostic, type OutputFormat } from './worker-client';
+import {
+	SnapshotChangedError,
+	WorkerUnavailableError,
+	type Diagnostic,
+	type OutputFormat
+} from './worker-client';
 
 /**
  * Compile jobs. A request inserts a durable `queued` row and returns at once;
@@ -231,11 +236,10 @@ async function runNext(): Promise<boolean> {
 	try {
 		await runJob(job);
 	} catch (error) {
-		const message =
-			error instanceof WorkerUnavailableError
-				? error.message
-				: 'An unexpected error occurred while compiling.';
-		if (!(error instanceof WorkerUnavailableError)) console.error('compile job failed', error);
+		const expected =
+			error instanceof WorkerUnavailableError || error instanceof SnapshotChangedError;
+		const message = expected ? error.message : 'An unexpected error occurred while compiling.';
+		if (!expected) console.error('compile job failed', error);
 		await sql`
 			UPDATE compile_jobs
 			SET status = 'errored', error = ${message}, finished_at = now()
