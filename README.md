@@ -19,9 +19,9 @@ To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)
 | Files | `KERNIC_DATA_DIR` | Project files and rendered pages on local disk |
 
 Project files, uploads and the documents built from them are treated as untrusted. The worker has no
-database access and none of the app's secrets. It receives files by content hash, compiles with
-resource limits (`prlimit`) inside a `bubblewrap` sandbox without network access, and returns
-diagnostics and rendered pages.
+database access and none of the app's secrets. It receives files by content hash (including the
+files of any packages the document imports), compiles with resource limits (`prlimit`) inside a
+`bubblewrap` sandbox without network access, and returns diagnostics and rendered pages.
 
 ## Development
 
@@ -67,6 +67,8 @@ Working:
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
 
+- Typst Universe packages: downloaded by the app from the registry, cached, and passed to the
+  sandboxed worker, which itself has no network access
 - Docker Compose deployment with an isolated compile worker, and backup and restore scripts
 
 Not built yet:
@@ -74,5 +76,4 @@ Not built yet:
 - Importing from a Git repository
 - Git checkpoints and Gitea/Forgejo integration
 - Team workspaces in the UI, sharing and review
-- Typst packages from Typst Universe (the sandbox has no network access)
 - Tinymist language server features, real-time collaboration

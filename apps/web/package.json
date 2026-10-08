@@ -57,6 +57,7 @@
 	},
 	"dependencies": {
 		"postgres": "^3.4.9",
+		"tar": "^7.5.22",
 		"yauzl": "^3.4.0",
 		"yazl": "^3.3.1"
 	}

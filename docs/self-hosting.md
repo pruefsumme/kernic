@@ -95,8 +95,23 @@ files in a folder next to `compose.yaml` and mount it into the worker:
 
 ### Typst packages
 
-Not supported yet. Documents are compiled without network access, so `#import "@preview/…"`
-fails with a message saying so. This is the next item in the [backlog](backlog.md).
+Documents can import packages from [Typst Universe](https://typst.app/universe)
+(`#import "@preview/name:1.2.3"`), including packages that depend on other packages.
+
+The compile worker has no network access, so the **app** downloads a package the first time a
+document needs it — only from the configured registry, only from the `preview` namespace — and
+passes its files to the worker. Archives are unpacked with the same care as uploads: size and
+file-count limits, regular files only, nothing outside the package folder. A downloaded version
+is kept in the data volume under `packages/` and never fetched again, so a document keeps
+compiling against exactly the files it was written with. The log records each installation with
+the archive's SHA-256.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `KERNIC_PACKAGE_REGISTRY` | `https://packages.typst.org` | Registry to download from. Set a mirror's URL, or `off` to disable downloads; packages already installed keep working. |
+
+Private namespaces such as `@local` are not available. Packages are not part of a backup; after
+a restore they are downloaded again when a document needs them.
 
 ## Backup
 
@@ -181,6 +196,8 @@ What the deployment does, and what it relies on you for.
   internal network: it cannot reach the internet, the database or the proxy. It holds none of the
   app's secrets; the worker token only lets the app talk to it. Its scratch space is in memory and
   is gone when the container stops.
+- **Packages.** Only the app talks to the package registry. A package's code runs inside the
+  same sandbox as the document that imports it.
 - **Network.** Only the proxy publishes ports. The database and the worker are not reachable from
   outside the Compose networks.
 - **Sessions.** Sign-in cookies are `HttpOnly` and `SameSite=Lax`, and marked `Secure` when Kernic

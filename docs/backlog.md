@@ -8,17 +8,11 @@ that works on typst.app should work here, and work in it must never be lost.
 
 ## Next
 
-1. **Typst packages (Typst Universe)** — the largest functional gap compared with typst.app: most
-   thesis templates are packages. Fetch `@preview` packages outside the compile sandbox from the
-   fixed registry host, verify and cache them, and hand them to the worker read-only. Admin switch
-   to disable or pin the registry. The import report should then say "will be installed" instead
-   of "not available".
-
-2. **Version history and Git checkpoints** — explicit checkpoints of a project as Git commits
+1. **Version history and Git checkpoints** — explicit checkpoints of a project as Git commits
    (local repository per project first), a history view with diff and restore, then push/pull to
    Gitea/Forgejo. This is also the safety net against accidental deletion and bad edits.
 
-3. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
+2. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
    - Threat model written down: untrusted documents, archives, uploads, other users, the network.
    - Authentication and sessions: cookie flags, session lifetime, rate limits, password policy,
      account lockout behaviour, setup token handling.
@@ -35,7 +29,7 @@ that works on typst.app should work here, and work in it must never be lost.
    - Dependency review and a `SECURITY.md` describing what is and is not protected.
    Outcome: a written report in `docs/`, issues fixed or listed with severity, tests for each fix.
 
-4. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
+3. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
    - Visual refinement: spacing rhythm, typography details, icon consistency, hover/active/focus
      states, the empty and loading states, dialog and menu styling.
    - Motion with intent and restraint: panel open/close, menu and dialog entrance, preview page
@@ -45,20 +39,21 @@ that works on typst.app should work here, and work in it must never be lost.
      optimistic file-tree updates.
    - A review of every screen at desktop, tablet and phone widths after the changes.
 
-5. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
+4. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
    admin user management, audit events.
 
-6. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
+5. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
    diagnostics while typing, behind the existing editor adapter.
 
-7. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
+6. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
    a document, presence and cursors, revocation when permissions change.
 
-8. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
+7. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
    readiness details, structured logs with request ids, quotas per workspace.
 
 ## Smaller items
 
+- Packages: an admin view of installed packages; private (`@local`) packages uploaded by an admin.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Project-wide search and replace.
 - Project folders and "move to workspace" on the dashboard.
@@ -76,3 +71,5 @@ that works on typst.app should work here, and work in it must never be lost.
 - ZIP import with a dry-run check (`8a3fe41`).
 - Docker Compose deployment (proxy, app, isolated worker, PostgreSQL) with self-hosting guide,
   backup and restore scripts and a tested restore.
+- Typst Universe packages, fetched by the app and passed to the worker; transitive dependencies;
+  specific error messages for missing and private packages.

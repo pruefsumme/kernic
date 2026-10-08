@@ -5,8 +5,8 @@ import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { requestCompile } from '../compile/jobs';
-import { WorkerUnavailableError, compileSnapshot, type Diagnostic } from '../compile/worker-client';
-import { snapshotTree } from '../compile/snapshot';
+import { compileProject } from '../compile/compile-project';
+import { WorkerUnavailableError, type Diagnostic } from '../compile/worker-client';
 import { importDir, projectDir, projectTreeDir, treeLimits } from '../config';
 import { sql } from '../db/client';
 import { looksLikeText } from '../projects/content-types';
@@ -35,7 +35,11 @@ export interface ImportReport {
 	suggestedName: string;
 	skipped: SkippedEntry[];
 	skippedCount: number;
-	packages: PackageUse[];
+	packages: (PackageUse & {
+		/** Whether this server can provide the package; `unknown` if the dry run could not run. */
+		status: 'available' | 'unavailable' | 'unknown';
+		reason: string | null;
+	})[];
 	missing: MissingReference[];
 	/** Font files that come with the project and will be available to it. */
 	fontFiles: string[];
@@ -186,6 +190,9 @@ async function buildReport(
 	const { packages, missing, referenced } = analyzeSources(sources, allPaths);
 	const suggestedEntry = guessEntryFile(typstFiles, referenced)!;
 
+	// The dry run also installs the packages the sources need, which tells us which are available.
+	const { unavailable, ...compile } = await dryRunCompile(importId, suggestedEntry);
+
 	return {
 		fileCount: archive.files.length,
 		totalBytes: archive.files.reduce((sum, file) => sum + file.size, 0),
@@ -195,32 +202,41 @@ async function buildReport(
 		suggestedName: (archive.strippedFolder ?? sourceName.replace(/\.zip$/i, '')).slice(0, 120),
 		skipped: archive.skipped,
 		skippedCount: archive.skippedCount,
-		packages,
+		packages: packages.map((use) => ({
+			...use,
+			status:
+				unavailable === null ? 'unknown' : unavailable.has(use.spec) ? 'unavailable' : 'available',
+			reason: unavailable?.get(use.spec) ?? null
+		})),
 		missing,
 		fontFiles: archive.files.filter((file) => FONT_FILE.test(file.path)).map((file) => file.path),
-		compile: await dryRunCompile(importId, suggestedEntry)
+		compile
 	};
 }
 
 /** Compiles the staged files once, exactly as the editor will, without creating a project. */
-async function dryRunCompile(importId: string, entry: string): Promise<ImportReport['compile']> {
+async function dryRunCompile(
+	importId: string,
+	entry: string
+): Promise<ImportReport['compile'] & { unavailable: Map<string, string> | null }> {
 	const tree = stagedTree(importId);
 	try {
-		const snapshot = await snapshotTree(tree);
-		const result = await compileSnapshot({
-			entry,
-			format: 'svg',
-			files: snapshot.files,
-			locate: (file) => path.join(tree, ...file.path.split('/'))
-		});
-		if (!result.ok) return { status: 'failed', diagnostics: result.diagnostics };
+		const { result, packageFailures } = await compileProject(tree, entry, 'svg');
+		const unavailable = new Map(packageFailures.map((failure) => [failure.spec, failure.reason]));
+		if (!result.ok) return { status: 'failed', diagnostics: result.diagnostics, unavailable };
 
 		const firstPage = result.artifacts[0];
 		if (firstPage) await fs.writeFile(previewPath(importId), Buffer.from(firstPage.data, 'base64'));
-		return { status: 'ok', pageCount: result.artifacts.length, diagnostics: result.diagnostics };
+		return {
+			status: 'ok',
+			pageCount: result.artifacts.length,
+			diagnostics: result.diagnostics,
+			unavailable
+		};
 	} catch (cause) {
-		if (cause instanceof WorkerUnavailableError)
-			return { status: 'unavailable', message: cause.message };
+		if (cause instanceof WorkerUnavailableError) {
+			return { status: 'unavailable', message: cause.message, unavailable: null };
+		}
 		throw cause;
 	}
 }

@@ -59,6 +59,17 @@ export const variables = defineEnvVars({
 		description: 'Optional fixed token for first-run setup; generated and logged when unset',
 		schema: (value) => value || undefined
 	},
+	KERNIC_PACKAGE_REGISTRY: {
+		description: 'Base URL of the Typst package registry, or "off" to disable package downloads',
+		schema: (value) => {
+			if (!value) return 'https://packages.typst.org';
+			if (value.toLowerCase() === 'off') return null;
+			if (!/^https?:\/\//.test(value)) {
+				throw new Error('KERNIC_PACKAGE_REGISTRY must be an http(s) URL or "off"');
+			}
+			return value.replace(/\/+$/, '');
+		}
+	},
 	KERNIC_MAX_FILE_MB: {
 		description: 'Largest single file a project may contain',
 		schema: megabytes('KERNIC_MAX_FILE_MB', 25)

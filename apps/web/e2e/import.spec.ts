@@ -75,8 +75,8 @@ test('problems are reported before anything is created, and the import can be ca
 	await uploadArchive(page, 'Broken report.zip', archive);
 
 	await expect(page.getByRole('heading', { name: /Does not compile yet/ })).toBeVisible();
-	await expect(page.getByRole('heading', { name: '1 package needed' })).toBeVisible();
-	await expect(page.getByText('@preview/cetz:0.3.1')).toBeVisible();
+	await expect(page.getByRole('heading', { name: '1 package is not available' })).toBeVisible();
+	await expect(page.getByText('@preview/cetz:0.3.1').first()).toBeVisible();
 	await expect(
 		page.getByRole('heading', { name: '1 referenced file is not in the archive' })
 	).toBeVisible();

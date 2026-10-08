@@ -36,3 +36,6 @@ export function projectArtifactsDir(projectId: string): string {
 export function importDir(importId: string): string {
 	return path.join(dataDir, 'imports', importId);
 }
+
+/** Typst packages downloaded from the registry; shared by all projects. */
+export const packagesDir = path.join(dataDir, 'packages');

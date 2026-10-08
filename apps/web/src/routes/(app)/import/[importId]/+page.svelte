@@ -37,6 +37,9 @@
 			? report.compile.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning')
 			: []
 	);
+	const unavailablePackages = $derived(
+		report?.packages.filter((use) => use.status === 'unavailable') ?? []
+	);
 	const count = (number: number, one: string, many: string) =>
 		number === 1 ? `1 ${one}` : `${number} ${many}`;
 	const location = (diagnostic: { path: string | null; line: number | null }) =>
@@ -143,20 +146,41 @@
 						{#if report.packages.length === 0}
 							<h2 class="good"><Icon name="check" size={18} /> No packages needed</h2>
 							<p>The project does not import Typst packages.</p>
-						{:else}
-							<h2 class="warn">
-								<Icon name="issues" size={18} />
-								{count(report.packages.length, 'package', 'packages')} needed
+						{:else if unavailablePackages.length === 0}
+							<h2 class="good">
+								<Icon name="check" size={18} />
+								{count(report.packages.length, 'package', 'packages')} available
 							</h2>
 							<p>
-								This server compiles without network access and has no packages installed yet, so
-								files that import these will not compile here.
+								{report.packages.some((use) => use.status === 'unknown')
+									? 'They could not be checked because the test compile did not run.'
+									: 'Installed on this server from Typst Universe.'}
 							</p>
 							<ul class="list">
 								{#each report.packages as use (use.spec)}
 									<li>
 										<code>{use.spec}</code>
 										<span class="path">used in {use.usedIn.join(', ')}</span>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<h2 class="bad">
+								<Icon name="issues" size={18} />
+								{count(unavailablePackages.length, 'package is', 'packages are')} not available
+							</h2>
+							<p>
+								Files that import {unavailablePackages.length === 1 ? 'it' : 'them'} will not compile
+								here.
+							</p>
+							<ul class="list">
+								{#each report.packages as use (use.spec)}
+									<li>
+										<code>{use.spec}</code>
+										<span class="path">
+											{use.status === 'unavailable' ? `Not available: ${use.reason}` : 'Available.'}
+											Used in {use.usedIn.join(', ')}.
+										</span>
 									</li>
 								{/each}
 							</ul>

@@ -6,6 +6,7 @@ import {
 	dataDir,
 	databaseUrl,
 	externalBaseURL,
+	registryPort,
 	setupToken,
 	workerDir,
 	workerPort,
@@ -57,6 +58,11 @@ export default defineConfig({
 					}
 				},
 				{
+					command: 'node e2e/fake-registry.ts',
+					url: `http://127.0.0.1:${registryPort}/healthz`,
+					reuseExistingServer: false
+				},
+				{
 					command: 'node e2e/reset.ts && node build',
 					url: `${baseURL}/healthz`,
 					reuseExistingServer: false,
@@ -68,6 +74,7 @@ export default defineConfig({
 						DATABASE_URL: databaseUrl,
 						KERNIC_DATA_DIR: dataDir,
 						KERNIC_SETUP_TOKEN: setupToken,
+						KERNIC_PACKAGE_REGISTRY: `http://127.0.0.1:${registryPort}`,
 						KERNIC_WORKER_URL: `http://127.0.0.1:${workerPort}`,
 						KERNIC_WORKER_TOKEN: workerToken
 					}

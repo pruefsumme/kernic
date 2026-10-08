@@ -5,6 +5,7 @@ import path from 'node:path';
 
 export const appPort = 5183;
 export const workerPort = 3183;
+export const registryPort = 4183;
 
 /**
  * Set KERNIC_E2E_BASE_URL to run the suite against an already running, freshly

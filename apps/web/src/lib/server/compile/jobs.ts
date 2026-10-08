@@ -4,13 +4,8 @@ import path from 'node:path';
 import { projectArtifactsDir, projectTreeDir } from '../config';
 import { sql } from '../db/client';
 import { isUuid } from '../projects/projects';
-import { snapshotTree } from './snapshot';
-import {
-	WorkerUnavailableError,
-	compileSnapshot,
-	type Diagnostic,
-	type OutputFormat
-} from './worker-client';
+import { compileProject } from './compile-project';
+import { WorkerUnavailableError, type Diagnostic, type OutputFormat } from './worker-client';
 
 /**
  * Compile jobs. A request inserts a durable `queued` row and returns at once;
@@ -260,16 +255,9 @@ async function runJob(job: CompileJob): Promise<void> {
 	if (!project) return;
 
 	const root = projectTreeDir(job.projectId);
-	const snapshot = await snapshotTree(root);
-
-	await sql`
-		UPDATE compile_jobs
-		SET revision = ${project.revision}, source_hash = ${snapshot.sourceHash},
-			entry_path = ${project.entry_path}
-		WHERE id = ${job.id}
-	`;
-
-	if (!snapshot.files.some((file) => file.path === project.entry_path)) {
+	try {
+		await fs.access(path.join(root, ...project.entry_path.split('/')));
+	} catch {
 		await finishJob(job, {
 			status: 'failed',
 			diagnostics: [
@@ -285,12 +273,13 @@ async function runJob(job: CompileJob): Promise<void> {
 		return;
 	}
 
-	const result = await compileSnapshot({
-		entry: project.entry_path,
-		format: job.format,
-		files: snapshot.files,
-		locate: (file) => path.join(root, ...file.path.split('/'))
-	});
+	const { snapshot, result } = await compileProject(root, project.entry_path, job.format);
+	await sql`
+		UPDATE compile_jobs
+		SET revision = ${project.revision}, source_hash = ${snapshot.sourceHash},
+			entry_path = ${project.entry_path}
+		WHERE id = ${job.id}
+	`;
 
 	let pageCount: number | null = null;
 	if (result.ok) {

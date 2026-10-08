@@ -1,5 +1,6 @@
 import { KERNIC_WORKER_TOKEN, KERNIC_WORKER_URL } from '$app/env/private';
 import { openAsBlob } from 'node:fs';
+import path from 'node:path';
 import type { SnapshotFile } from './snapshot';
 
 export type OutputFormat = 'svg' | 'pdf';
@@ -60,20 +61,16 @@ async function uploadBlob(sha256: string, absolutePath: string): Promise<void> {
 	}
 }
 
-/** Adds what the user can do about errors the compiler reports tersely. */
-function explainDiagnostic(diagnostic: Diagnostic): Diagnostic {
-	if (diagnostic.message.startsWith('failed to download package')) {
-		return {
-			...diagnostic,
-			message:
-				'This package is not installed on the server. Documents are compiled without ' +
-				'network access, so packages cannot be downloaded during a compile.'
-		};
-	}
-	return diagnostic;
-}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Files of one package to make available to the document. */
+export interface PackageInput {
+	namespace: string;
+	name: string;
+	version: string;
+	directory: string;
+	files: { path: string; sha256: string }[];
+}
 
 /**
  * Compiles a snapshot. The worker caches files by hash: the request only lists
@@ -83,16 +80,37 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function compileSnapshot(request: {
 	entry: string;
 	format: OutputFormat;
+	/** Directory the snapshot was taken from. */
+	root: string;
 	files: SnapshotFile[];
-	/** Absolute path of a snapshot file, for uploading its content. */
-	locate: (file: SnapshotFile) => string;
+	packages: PackageInput[];
 }): Promise<WorkerResult> {
+	const reference = (file: { path: string; sha256: string }) => ({
+		path: file.path,
+		sha256: file.sha256
+	});
 	const body = JSON.stringify({
 		entry: request.entry,
 		format: request.format,
-		files: request.files.map((file) => ({ path: file.path, sha256: file.sha256 }))
+		files: request.files.map(reference),
+		packages: request.packages.map(({ namespace, name, version, files }) => ({
+			namespace,
+			name,
+			version,
+			files: files.map(reference)
+		}))
 	});
-	const byHash = new Map(request.files.map((file) => [file.sha256, file]));
+
+	// Where to read each blob from, should the worker ask for it.
+	const locations = new Map<string, string>();
+	for (const file of request.files) {
+		locations.set(file.sha256, path.join(request.root, ...file.path.split('/')));
+	}
+	for (const item of request.packages) {
+		for (const file of item.files) {
+			locations.set(file.sha256, path.join(item.directory, ...file.path.split('/')));
+		}
+	}
 
 	for (let attempt = 0; attempt < 6; attempt++) {
 		const response = await workerFetch('/compile', {
@@ -101,18 +119,15 @@ export async function compileSnapshot(request: {
 			body
 		});
 
-		if (response.status === 200) {
-			const result = (await response.json()) as WorkerResult;
-			return { ...result, diagnostics: result.diagnostics.map(explainDiagnostic) };
-		}
+		if (response.status === 200) return (await response.json()) as WorkerResult;
 
 		if (response.status === 409) {
 			const { missing } = (await response.json()) as { missing: string[] };
 			for (const sha256 of missing) {
-				const file = byHash.get(sha256);
-				if (!file)
+				const location = locations.get(sha256);
+				if (!location)
 					throw new WorkerUnavailableError('The compile worker asked for an unknown file.');
-				await uploadBlob(sha256, request.locate(file));
+				await uploadBlob(sha256, location);
 			}
 			continue;
 		}
