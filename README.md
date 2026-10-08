@@ -3,8 +3,8 @@
 A self-hosted, Git-first workspace for writing [Typst](https://typst.app/docs/) documents: edit a
 multi-file project in the browser, see the rendered pages next to the source, and export a PDF.
 
-> Early development. The single-user editing loop works and can be self-hosted; Typst packages,
-> Git checkpoints, team sharing and real-time collaboration are not built yet. See
+> Early development. The single-user editing loop works and can be self-hosted; Git remotes
+> (Gitea/Forgejo), team sharing and real-time collaboration are not built yet. See
 > [Status](#status) and the [backlog](docs/backlog.md).
 
 To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**.
@@ -25,8 +25,8 @@ files of any packages the document imports), compiles with resource limits (`prl
 
 ## Development
 
-Requirements: Node 24+, pnpm, Docker (for PostgreSQL), the [Typst CLI](https://github.com/typst/typst)
-and `bubblewrap` on your `PATH`.
+Requirements: Node 24+, pnpm, Docker (for PostgreSQL), Git, the
+[Typst CLI](https://github.com/typst/typst) and `bubblewrap` on your `PATH`.
 
 ```sh
 pnpm install
@@ -64,6 +64,8 @@ Working:
 - Autosave with conflict detection: a file changed elsewhere is never overwritten silently
 - Live preview through the sandboxed worker, with compiler errors and warnings linked to the source
 - PDF export and ZIP download of all project files
+- Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
+  restore of any earlier version without losing the current one, ZIP download of a version
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
 
@@ -74,6 +76,6 @@ Working:
 Not built yet:
 
 - Importing from a Git repository
-- Git checkpoints and Gitea/Forgejo integration
+- Pushing and pulling checkpoints to a Gitea/Forgejo repository
 - Team workspaces in the UI, sharing and review
 - Tinymist language server features, real-time collaboration

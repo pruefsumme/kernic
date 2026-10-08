@@ -388,6 +388,28 @@ export class EditorSession {
 		this.requestCompile();
 	}
 
+	/**
+	 * Brings the editor in line with files that were replaced on the server (a
+	 * restored checkpoint): reloads the tree and the open file, then recompiles.
+	 */
+	async reloadFromDisk(revision: number): Promise<void> {
+		clearTimeout(this.#saveTimer);
+		this.saveState = 'saved';
+		this.revision = Math.max(this.revision, revision);
+		await this.refreshTree();
+
+		const previous = this.file?.path;
+		this.file = null;
+		const next =
+			previous && this.hasEntry(previous)
+				? previous
+				: this.hasEntry(this.entryPath)
+					? this.entryPath
+					: this.entries.find((entry) => entry.type === 'file')?.path;
+		if (next) await this.open(next);
+		this.requestCompile();
+	}
+
 	async upload(directory: string, files: File[]): Promise<UploadResult[]> {
 		const { results } = await this.api.upload(directory, files);
 		await this.refreshTree();

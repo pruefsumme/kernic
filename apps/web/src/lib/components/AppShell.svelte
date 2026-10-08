@@ -332,6 +332,8 @@
 	}
 
 	.body {
+		/* Anchor for the rail panel when it overlays the content on narrow screens. */
+		position: relative;
 		display: flex;
 		min-width: 0;
 		min-height: 0;

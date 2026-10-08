@@ -118,7 +118,7 @@ a restore they are downloaded again when a document needs them.
 Two things hold your data, and a backup needs both:
 
 - the **database** (accounts, project list, settings), and
-- the **`kernic-data` volume** (the files of every project).
+- the **`kernic-data` volume** (the files of every project and their version history).
 
 `deploy/backup.sh` saves both. It stops the app for a few seconds so that the two are captured at
 the same moment, and starts it again:
@@ -128,7 +128,8 @@ cd deploy
 ./backup.sh /path/to/backups
 ```
 
-Each run creates a dated folder with `database.dump` and `projects.tar.gz`. Rendered preview pages
+Each run creates a dated folder with `database.dump` and `projects.tar.gz` (project files
+including all checkpoints). Rendered preview pages
 are not included; they are produced again when a project is opened. Copy the folder to another
 machine: a backup on the same disk does not survive losing the disk. Also keep a copy of
 `deploy/.env`.

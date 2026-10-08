@@ -26,6 +26,27 @@ export interface CompileJob {
 	error: string | null;
 }
 
+export interface Checkpoint {
+	id: string;
+	message: string;
+	authorName: string;
+	createdAt: Date;
+}
+
+export interface Change {
+	path: string;
+	kind: 'added' | 'modified' | 'deleted' | 'renamed';
+}
+
+export interface FileDiff {
+	path: string;
+	previousPath: string | null;
+	kind: Change['kind'];
+	binary: boolean;
+	lines: { kind: 'context' | 'added' | 'removed' | 'hunk'; text: string }[];
+	truncated: boolean;
+}
+
 export type LoadedFile =
 	| { kind: 'text'; text: string; hash: string }
 	| { kind: 'binary'; contentType: string; size: number };
@@ -172,6 +193,39 @@ export function createProjectApi(projectId: string) {
 			return (
 				(await (await request(`${base}/compile`, json({ format }))).json()) as { job: CompileJob }
 			).job;
+		},
+
+		checkpointArchiveUrl: (checkpointId: string) => `${base}/history/${checkpointId}/archive`,
+
+		async history(): Promise<{ checkpoints: Checkpoint[]; changes: Change[] }> {
+			const body = (await (await request(`${base}/history`)).json()) as {
+				checkpoints: (Omit<Checkpoint, 'createdAt'> & { createdAt: string })[];
+				changes: Change[];
+			};
+			return {
+				changes: body.changes,
+				checkpoints: body.checkpoints.map((checkpoint) => ({
+					...checkpoint,
+					createdAt: new Date(checkpoint.createdAt)
+				}))
+			};
+		},
+
+		async createCheckpoint(message: string): Promise<void> {
+			await request(`${base}/history`, json({ message }));
+		},
+
+		/** Changes of a checkpoint, or of the current files with `working`. */
+		async diff(checkpointId: string | 'working'): Promise<FileDiff[]> {
+			return (
+				(await (await request(`${base}/history/${checkpointId}/diff`)).json()) as {
+					files: FileDiff[];
+				}
+			).files;
+		},
+
+		async restoreCheckpoint(checkpointId: string): Promise<{ revision: number }> {
+			return (await request(`${base}/history/${checkpointId}/restore`, json({}))).json();
 		},
 
 		/** Long-polls until the job has finished. */

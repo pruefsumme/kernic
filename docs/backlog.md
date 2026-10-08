@@ -8,9 +8,9 @@ that works on typst.app should work here, and work in it must never be lost.
 
 ## Next
 
-1. **Version history and Git checkpoints** — explicit checkpoints of a project as Git commits
-   (local repository per project first), a history view with diff and restore, then push/pull to
-   Gitea/Forgejo. This is also the safety net against accidental deletion and bad edits.
+1. **Git remotes (Gitea/Forgejo)** — connect a project to a repository on a forge: push
+   checkpoints, pull and merge changes made elsewhere, import a project by cloning (allow-listed
+   hosts, scoped tokens stored as secrets, no hooks, limits on size and time).
 
 2. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
    - Threat model written down: untrusted documents, archives, uploads, other users, the network.
@@ -27,6 +27,10 @@ that works on typst.app should work here, and work in it must never be lost.
    - Parity check against typst.app for thesis work: fonts, bibliography, figures, large
      documents (100+ pages) and compile time, PDF export options, packages.
    - Dependency review and a `SECURITY.md` describing what is and is not protected.
+   - Unexplained: one end-to-end run (2026-10-11, while the history feature was being built) had
+     every test after the first history test fail quickly, as if the app had stopped; it did not
+     reproduce in 9 further full runs or under a stress test of concurrent saves, compiles and
+     restores. Keep server logs of test runs and look for a crash path.
    Outcome: a written report in `docs/`, issues fixed or listed with severity, tests for each fix.
 
 3. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
@@ -54,6 +58,9 @@ that works on typst.app should work here, and work in it must never be lost.
 ## Smaller items
 
 - Packages: an admin view of installed packages; private (`@local`) packages uploaded by an admin.
+- Automatic safety snapshots between explicit checkpoints (for example every 30 minutes of
+  editing), kept apart from the checkpoint history.
+- History: restore a single file; compare any two checkpoints.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Project-wide search and replace.
 - Project folders and "move to workspace" on the dashboard.
@@ -73,3 +80,5 @@ that works on typst.app should work here, and work in it must never be lost.
   backup and restore scripts and a tested restore.
 - Typst Universe packages, fetched by the app and passed to the worker; transitive dependencies;
   specific error messages for missing and private packages.
+- Version history: checkpoints as Git commits per project, diff, restore, ZIP of a version;
+  one lock per project for file changes and history operations.

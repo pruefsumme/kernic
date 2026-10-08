@@ -69,14 +69,16 @@ test('problems are reported before anything is created, and the import can be ca
 	page
 }) => {
 	const archive = await zipOf({
-		'main.typ': '#import "@preview/cetz:0.3.1": canvas\n#image("figures/missing.png")\nText\n',
+		// A package that exists neither in the test registry nor on Typst Universe.
+		'main.typ':
+			'#import "@preview/kernic-no-such-package:9.9.9": thing\n#image("figures/missing.png")\nText\n',
 		'notes.typ': 'Loose notes\n'
 	});
 	await uploadArchive(page, 'Broken report.zip', archive);
 
 	await expect(page.getByRole('heading', { name: /Does not compile yet/ })).toBeVisible();
 	await expect(page.getByRole('heading', { name: '1 package is not available' })).toBeVisible();
-	await expect(page.getByText('@preview/cetz:0.3.1').first()).toBeVisible();
+	await expect(page.getByText('@preview/kernic-no-such-package:9.9.9').first()).toBeVisible();
 	await expect(
 		page.getByRole('heading', { name: '1 referenced file is not in the archive' })
 	).toBeVisible();

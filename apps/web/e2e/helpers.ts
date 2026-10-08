@@ -41,7 +41,7 @@ export const previewStatus = (page: Page) =>
 	page.getByRole('region', { name: 'Preview' }).getByRole('status');
 export const saveState = (page: Page) => page.locator('.save');
 export const pages = (page: Page) => page.locator('img.sheet');
-export const panel = (page: Page, name: 'Files' | 'Outline' | 'Issues') =>
+export const panel = (page: Page, name: 'Files' | 'Outline' | 'Issues' | 'History') =>
 	page.getByRole('complementary', { name });
 
 /** Types at the end of the open document. */

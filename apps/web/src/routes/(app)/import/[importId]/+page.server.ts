@@ -1,4 +1,5 @@
 import { error, fail, isHttpError, redirect } from '@sveltejs/kit';
+import { recordInitialCheckpoint } from '#lib/server/history/history.ts';
 import { requireUser } from '#lib/server/http.ts';
 import { cancelImport, confirmImport, getImport } from '#lib/server/imports/imports.ts';
 import { ProjectInputError } from '#lib/server/projects/projects.ts';
@@ -40,6 +41,12 @@ export const actions: Actions = {
 			if (isHttpError(cause)) return fail(cause.status, { message: cause.body.message });
 			throw cause;
 		}
+		const pending = await getImport(user.id, event.params.importId);
+		await recordInitialCheckpoint(
+			project.id,
+			`Imported from ${pending?.sourceName ?? 'a ZIP archive'}`,
+			user
+		);
 		redirect(303, `/projects/${project.id}`);
 	},
 

@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { requestCompile } from '#lib/server/compile/jobs.ts';
 import { sql } from '#lib/server/db/client.ts';
+import { recordInitialCheckpoint } from '#lib/server/history/history.ts';
 import { requireUser } from '#lib/server/http.ts';
 import {
 	ProjectInputError,
@@ -79,6 +80,12 @@ export const actions: Actions = {
 			throw error;
 		}
 
+		const template = templates.find((candidate) => candidate.id === templateId);
+		await recordInitialCheckpoint(
+			project.id,
+			`Created from the “${template?.name}” template`,
+			user
+		);
 		// Render right away, so the editor and the project's thumbnail have pages to show.
 		await requestCompile({ projectId: project.id, userId: user.id, format: 'svg' });
 		redirect(303, `/projects/${project.id}`);

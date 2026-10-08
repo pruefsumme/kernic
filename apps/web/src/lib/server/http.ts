@@ -1,5 +1,6 @@
 import { error, type RequestEvent } from '@sveltejs/kit';
 import type { SessionUser } from './auth/sessions';
+import { NothingToCheckpointError, UnknownCheckpointError } from './history/git';
 import { InvalidPathError } from './projects/paths';
 import {
 	ProjectInputError,
@@ -53,6 +54,8 @@ export function throwAsHttpError(cause: unknown): never {
 		error(TREE_ERROR_STATUS[cause.code], cause.message, { code: cause.code });
 	if (cause instanceof InvalidPathError) error(400, cause.message, { code: 'invalid-path' });
 	if (cause instanceof ProjectInputError) error(400, cause.message);
+	if (cause instanceof NothingToCheckpointError) error(409, cause.message, { code: 'no-changes' });
+	if (cause instanceof UnknownCheckpointError) error(404, cause.message);
 	throw cause;
 }
 

@@ -12,6 +12,7 @@
 	import { revealPosition, type Heading } from './codemirror.ts';
 	import FilesPanel from './FilesPanel.svelte';
 	import FormatToolbar from './FormatToolbar.svelte';
+	import HistoryPanel from './HistoryPanel.svelte';
 	import IssuesPanel from './IssuesPanel.svelte';
 	import OutlinePanel from './OutlinePanel.svelte';
 	import PreviewPane from './PreviewPane.svelte';
@@ -44,7 +45,7 @@
 			})
 	);
 
-	type Panel = 'files' | 'outline' | 'issues';
+	type Panel = 'files' | 'outline' | 'issues' | 'history';
 	let openPanel = $state<Panel | null>(null);
 	let pane = $state<'source' | 'preview'>('source');
 	let view = $state<EditorView>();
@@ -170,6 +171,13 @@
 			onclick: () => toggle('issues'),
 			badge: session.errorCount || session.warningCount,
 			badgeTone: session.errorCount > 0 ? 'error' : 'warning'
+		},
+		{
+			id: 'history',
+			label: 'History',
+			icon: 'history',
+			active: openPanel === 'history',
+			onclick: () => toggle('history')
 		}
 	]);
 	const footer = $derived<RailItem[]>([
@@ -266,6 +274,8 @@
 			/>
 		{:else if openPanel === 'issues'}
 			<IssuesPanel {session} onreveal={revealDiagnostic} onclose={() => (openPanel = null)} />
+		{:else if openPanel === 'history'}
+			<HistoryPanel {session} onclose={() => (openPanel = null)} />
 		{/if}
 	{/snippet}
 
