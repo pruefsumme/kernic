@@ -56,14 +56,30 @@ async function uploadBlob(harness: Harness, content: string): Promise<string> {
 	return hash;
 }
 
+type PackageSource = {
+	namespace: string;
+	name: string;
+	version: string;
+	files: Record<string, string>;
+};
+
+async function uploadAll(harness: Harness, files: Record<string, string>) {
+	const list = [];
+	for (const [filePath, content] of Object.entries(files)) {
+		list.push({ path: filePath, sha256: await uploadBlob(harness, content) });
+	}
+	return list;
+}
+
 async function compile(
 	harness: Harness,
 	files: Record<string, string>,
-	options: { entry?: string; format?: 'svg' | 'pdf' } = {}
+	options: { entry?: string; format?: 'svg' | 'pdf'; packages?: PackageSource[] } = {}
 ) {
-	const snapshot = [];
-	for (const [filePath, content] of Object.entries(files)) {
-		snapshot.push({ path: filePath, sha256: await uploadBlob(harness, content) });
+	const snapshot = await uploadAll(harness, files);
+	const packages = [];
+	for (const item of options.packages ?? []) {
+		packages.push({ ...item, files: await uploadAll(harness, item.files) });
 	}
 	const response = await fetch(`${harness.baseUrl}/compile`, {
 		method: 'POST',
@@ -71,7 +87,8 @@ async function compile(
 		body: JSON.stringify({
 			entry: options.entry ?? 'main.typ',
 			format: options.format ?? 'svg',
-			files: snapshot
+			files: snapshot,
+			packages
 		})
 	});
 	return { status: response.status, body: (await response.json()) as any };
@@ -208,6 +225,77 @@ describe('compile worker', () => {
 	test('cleans up the job directory after each compile', async () => {
 		await compile(harness, { 'main.typ': 'Hello' });
 		assert.deepEqual(await readdir(path.join(harness.workDir, 'jobs')), []);
+	});
+});
+
+describe('packages', () => {
+	let harness: Harness;
+	before(async () => {
+		harness = await startWorker();
+	});
+	after(() => harness.close());
+
+	const manifest = (name: string, version: string) =>
+		`[package]\nname = "${name}"\nversion = "${version}"\nentrypoint = "lib.typ"\n`;
+
+	test('a document can import packages supplied with the request, including nested ones', async () => {
+		const { body } = await compile(
+			harness,
+			{ 'main.typ': '#import "@preview/greeting:0.1.0": greet\n#greet("Kernic")' },
+			{
+				packages: [
+					{
+						namespace: 'preview',
+						name: 'greeting',
+						version: '0.1.0',
+						files: {
+							'typst.toml': manifest('greeting', '0.1.0'),
+							'lib.typ':
+								'#import "@preview/punctuation:1.2.0": mark\n#let greet(name) = [Hello #name#mark]'
+						}
+					},
+					{
+						namespace: 'preview',
+						name: 'punctuation',
+						version: '1.2.0',
+						files: { 'typst.toml': manifest('punctuation', '1.2.0'), 'lib.typ': '#let mark = "!"' }
+					}
+				]
+			}
+		);
+		assert.equal(body.ok, true, JSON.stringify(body.diagnostics));
+		assert.equal(body.artifacts.length, 1);
+	});
+
+	test('a package that was not supplied is reported as an error, not fetched', async () => {
+		const { body } = await compile(harness, {
+			'main.typ': '#import "@preview/greeting:0.1.0": greet\nText'
+		});
+		assert.equal(body.ok, false);
+		assert.equal(body.diagnostics[0].path, 'main.typ');
+		assert.equal(body.diagnostics[0].line, 1);
+	});
+
+	test('rejects package identifiers that could change where files are written', async () => {
+		const hash = await uploadBlob(harness, 'Hello');
+		for (const bad of [
+			{ namespace: '..', name: 'x', version: '1.0.0' },
+			{ namespace: 'preview', name: '../../etc', version: '1.0.0' },
+			{ namespace: 'preview', name: 'x', version: '1.0.0/../..' },
+			{ namespace: 'preview', name: 'X y', version: '1.0.0' }
+		]) {
+			const response = await fetch(`${harness.baseUrl}/compile`, {
+				method: 'POST',
+				headers: { ...auth, 'content-type': 'application/json' },
+				body: JSON.stringify({
+					entry: 'main.typ',
+					format: 'svg',
+					files: [{ path: 'main.typ', sha256: hash }],
+					packages: [{ ...bad, files: [{ path: 'lib.typ', sha256: hash }] }]
+				})
+			});
+			assert.equal(response.status, 400, JSON.stringify(bad));
+		}
 	});
 });
 

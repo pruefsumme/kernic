@@ -15,10 +15,20 @@ export interface SnapshotFile {
 	sha256: string;
 }
 
+/** A Typst package provided by the app, e.g. `@preview/cetz:0.3.1`. */
+export interface PackageFiles {
+	namespace: string;
+	name: string;
+	version: string;
+	files: SnapshotFile[];
+}
+
 export interface CompileRequest {
 	entry: string;
 	format: OutputFormat;
 	files: SnapshotFile[];
+	/** Packages the document may import. The worker never downloads any itself. */
+	packages: PackageFiles[];
 }
 
 export interface Artifact {
@@ -50,29 +60,20 @@ export class MissingBlobsError extends Error {
 
 const MAX_LOG_BYTES = 256 * 1024;
 
-export function parseCompileRequest(body: unknown, limits: CompileLimits): CompileRequest {
-	if (typeof body !== 'object' || body === null) {
-		throw new InvalidRequestError('request body must be a JSON object');
-	}
-	const { entry, format, files } = body as Record<string, unknown>;
+const PACKAGE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const PACKAGE_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 
-	if (format !== 'svg' && format !== 'pdf') {
-		throw new InvalidRequestError('format must be "svg" or "pdf"');
-	}
-	if (!isSafeRelativePath(entry)) throw new InvalidRequestError('entry is not a valid path');
+/** Validates a list of `{ path, sha256 }` entries; `what` names it in error messages. */
+function parseFileList(files: unknown, what: string): SnapshotFile[] {
 	if (!Array.isArray(files) || files.length === 0) {
-		throw new InvalidRequestError('files must be a non-empty array');
+		throw new InvalidRequestError(`${what} must be a non-empty array`);
 	}
-	if (files.length > limits.maxSnapshotFiles) {
-		throw new InvalidRequestError(`snapshot has more than ${limits.maxSnapshotFiles} files`);
-	}
-
 	const seen = new Set<string>();
-	const snapshot: SnapshotFile[] = [];
+	const result: SnapshotFile[] = [];
 	for (const file of files as unknown[]) {
 		const candidate = (file ?? {}) as Record<string, unknown>;
 		if (!isSafeRelativePath(candidate.path)) {
-			throw new InvalidRequestError('snapshot contains an invalid file path');
+			throw new InvalidRequestError(`${what} contains an invalid file path`);
 		}
 		if (!isSha256(candidate.sha256)) {
 			throw new InvalidRequestError(`file "${candidate.path}" has an invalid sha256`);
@@ -81,11 +82,57 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 			throw new InvalidRequestError(`file "${candidate.path}" is listed twice`);
 		}
 		seen.add(candidate.path);
-		snapshot.push({ path: candidate.path, sha256: candidate.sha256 });
+		result.push({ path: candidate.path, sha256: candidate.sha256 });
 	}
+	return result;
+}
 
-	if (!seen.has(entry)) throw new InvalidRequestError('entry file is not part of the snapshot');
-	return { entry, format, files: snapshot };
+function parsePackages(packages: unknown): PackageFiles[] {
+	if (packages === undefined) return [];
+	if (!Array.isArray(packages)) throw new InvalidRequestError('packages must be an array');
+
+	const seen = new Set<string>();
+	return (packages as unknown[]).map((entry) => {
+		const { namespace, name, version, files } = (entry ?? {}) as Record<string, unknown>;
+		if (
+			typeof namespace !== 'string' ||
+			typeof name !== 'string' ||
+			typeof version !== 'string' ||
+			!PACKAGE_NAME.test(namespace) ||
+			!PACKAGE_NAME.test(name) ||
+			!PACKAGE_VERSION.test(version)
+		) {
+			throw new InvalidRequestError('packages contains an invalid package identifier');
+		}
+		const spec = `@${namespace}/${name}:${version}`;
+		if (seen.has(spec)) throw new InvalidRequestError(`package ${spec} is listed twice`);
+		seen.add(spec);
+		return { namespace, name, version, files: parseFileList(files, `package ${spec}`) };
+	});
+}
+
+export function parseCompileRequest(body: unknown, limits: CompileLimits): CompileRequest {
+	if (typeof body !== 'object' || body === null) {
+		throw new InvalidRequestError('request body must be a JSON object');
+	}
+	const { entry, format, files, packages } = body as Record<string, unknown>;
+
+	if (format !== 'svg' && format !== 'pdf') {
+		throw new InvalidRequestError('format must be "svg" or "pdf"');
+	}
+	if (!isSafeRelativePath(entry)) throw new InvalidRequestError('entry is not a valid path');
+	const snapshot = parseFileList(files, 'files');
+	const packageFiles = parsePackages(packages);
+
+	const fileCount =
+		snapshot.length + packageFiles.reduce((sum, item) => sum + item.files.length, 0);
+	if (fileCount > limits.maxSnapshotFiles) {
+		throw new InvalidRequestError(`snapshot has more than ${limits.maxSnapshotFiles} files`);
+	}
+	if (!snapshot.some((file) => file.path === entry)) {
+		throw new InvalidRequestError('entry file is not part of the snapshot');
+	}
+	return { entry, format, files: snapshot, packages: packageFiles };
 }
 
 interface RunOutcome {
@@ -172,7 +219,8 @@ export class Compiler {
 	}
 
 	async compile(request: CompileRequest): Promise<CompileResult> {
-		this.#checkSnapshot(request.files);
+		const packageFiles = request.packages.flatMap((item) => item.files);
+		this.#checkSnapshot([...request.files, ...packageFiles]);
 
 		const jobDir = path.join(this.#jobsDir, randomUUID());
 		const paths: JobPaths = {
@@ -187,6 +235,12 @@ export class Compiler {
 			await mkdir(paths.outputDir);
 			await mkdir(paths.packageCacheDir);
 			await this.#materialize(request.files, paths.sourceDir);
+			// Typst looks for packages in `<cache>/<namespace>/<name>/<version>` before it
+			// would try to download them; everything a document may import is placed there.
+			for (const item of request.packages) {
+				const directory = path.join(paths.packageCacheDir, item.namespace, item.name, item.version);
+				await this.#materialize(item.files, directory);
+			}
 			return await this.#run(request, paths);
 		} finally {
 			await rm(jobDir, { recursive: true, force: true });
