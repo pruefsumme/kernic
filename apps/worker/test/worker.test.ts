@@ -332,6 +332,78 @@ describe('compile limits', () => {
 	});
 });
 
+describe('hostile documents', () => {
+	async function withWorker(
+		env: Record<string, string>,
+		run: (harness: Harness) => Promise<void>
+	): Promise<void> {
+		const harness = await startWorker(env);
+		try {
+			await run(harness);
+			// Whatever the document did, the worker must still serve the next request.
+			const { body } = await compile(harness, { 'main.typ': 'Still alive' });
+			assert.equal(body.ok, true, JSON.stringify(body.diagnostics));
+		} finally {
+			await harness.close();
+		}
+	}
+
+	test('a document that exhausts memory fails without taking the worker down', async () => {
+		await withWorker({ KERNIC_COMPILE_MEMORY_MB: '768' }, async (harness) => {
+			const { status, body } = await compile(harness, {
+				'main.typ': '#let big = "x" * 4000000000\n#big.len()'
+			});
+			assert.equal(status, 200);
+			assert.equal(body.ok, false);
+			assert.match(body.diagnostics.at(-1).message, /ran out of memory/);
+		});
+	});
+
+	test('a document with more pages than allowed is refused with a clear message', async () => {
+		await withWorker({ KERNIC_COMPILE_MAX_PAGES: '20' }, async (harness) => {
+			const { body } = await compile(harness, {
+				'main.typ': '#for i in range(60) [Page #i #pagebreak()]'
+			});
+			assert.equal(body.ok, false);
+			assert.deepEqual(body.artifacts, []);
+			assert.match(body.diagnostics.at(-1).message, /more than 20 pages/);
+		});
+	});
+
+	test('output beyond the size limit is refused', async () => {
+		await withWorker({ KERNIC_COMPILE_OUTPUT_MB: '1' }, async (harness) => {
+			// Each page carries distinct text, so the pages cannot share glyph data.
+			const { body } = await compile(harness, {
+				'main.typ':
+					'#set page(width: 30cm, height: 30cm, margin: 1cm)\n#set text(size: 6pt)\n' +
+					'#for i in range(120) [#((str(i) + " lorem ipsum dolor sit amet ") * 600) #pagebreak()]'
+			});
+			assert.equal(body.ok, false);
+			assert.deepEqual(body.artifacts, []);
+			// Refused for its size, not because the test document is broken.
+			assert.match(body.diagnostics.at(-1).message, /larger than 1 MB/);
+		});
+	});
+
+	test('a document cannot see the environment or files of the worker', async () => {
+		await withWorker({}, async (harness) => {
+			for (const source of [
+				'#read("/proc/self/environ")',
+				'#read("/etc/passwd")',
+				'#image("/etc/hostname")',
+				'#include "/etc/os-release"',
+				'#import "../../../etc/passwd": x'
+			]) {
+				const { body } = await compile(harness, { 'main.typ': source });
+				assert.equal(body.ok, false, source);
+			}
+			// Command-line inputs are the only channel into a document, and none are passed.
+			const { body } = await compile(harness, { 'main.typ': '#assert(sys.inputs.len() == 0)\nok' });
+			assert.equal(body.ok, true, JSON.stringify(body.diagnostics));
+		});
+	});
+});
+
 describe('bubblewrap sandbox', { skip: !existsSync('/usr/bin/bwrap') }, () => {
 	test('gives the compiler no network access', async () => {
 		const harness = await startWorker({ KERNIC_WORKER_SANDBOX: 'bwrap' });

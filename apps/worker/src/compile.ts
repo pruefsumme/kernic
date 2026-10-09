@@ -137,9 +137,19 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 
 interface RunOutcome {
 	exitCode: number | null;
+	/** Signal that ended the compiler, whether reported directly or as exit code 128+n. */
+	signal: number | null;
 	stderr: string;
 	timedOut: boolean;
 }
+
+const SIGNAL_NUMBERS: Record<string, number> = {
+	SIGABRT: 6,
+	SIGKILL: 9,
+	SIGSEGV: 11,
+	SIGXCPU: 24,
+	SIGXFSZ: 25
+};
 
 function runCommand(
 	file: string,
@@ -177,9 +187,16 @@ function runCommand(
 			clearTimeout(timer);
 			reject(error);
 		});
-		child.on('close', (exitCode) => {
+		child.on('close', (exitCode, signalName) => {
 			clearTimeout(timer);
-			resolve({ exitCode, stderr: Buffer.concat(chunks).toString('utf8'), timedOut });
+			// Without a sandbox wrapper the signal is reported directly; through
+			// bubblewrap it arrives as the conventional exit code 128 + signal.
+			const signal = signalName
+				? (SIGNAL_NUMBERS[signalName] ?? 0)
+				: exitCode !== null && exitCode > 128
+					? exitCode - 128
+					: null;
+			resolve({ exitCode, signal, stderr: Buffer.concat(chunks).toString('utf8'), timedOut });
 		});
 	});
 }
@@ -306,15 +323,7 @@ export class Compiler {
 
 		if (outcome.exitCode !== 0) {
 			if (!hasErrors(result.diagnostics)) {
-				// Killed by a resource limit, or failed before Typst could report anything useful.
-				const detail = outcome.stderr.trim().split('\n').at(-1);
-				result.diagnostics.push(
-					failure(
-						detail
-							? `The compiler stopped unexpectedly: ${detail}`
-							: 'The compiler stopped unexpectedly. The document may exceed the memory or output limits.'
-					)
-				);
+				result.diagnostics.push(failure(this.#describeAbnormalExit(outcome)));
 			}
 			return result;
 		}
@@ -328,6 +337,25 @@ export class Compiler {
 		result.artifacts = artifacts;
 		result.ok = true;
 		return result;
+	}
+
+	/** Explains why the compiler ended without reporting an error of its own. */
+	#describeAbnormalExit(outcome: RunOutcome): string {
+		const megabytes = (bytes: number) => Math.round(bytes / (1024 * 1024));
+		switch (outcome.signal) {
+			case SIGNAL_NUMBERS.SIGXFSZ:
+				return `The rendered output is larger than ${megabytes(this.#limits.outputBytes)} MB, which is the limit for this server.`;
+			case SIGNAL_NUMBERS.SIGXCPU:
+				return 'Compilation was stopped because it used too much processor time.';
+			case SIGNAL_NUMBERS.SIGABRT:
+			case SIGNAL_NUMBERS.SIGKILL:
+			case SIGNAL_NUMBERS.SIGSEGV:
+				return `The compiler ran out of memory (limit: ${megabytes(this.#limits.memoryBytes)} MB) or crashed. Very large documents or data files can cause this.`;
+		}
+		const detail = outcome.stderr.trim().split('\n').at(-1);
+		return detail
+			? `The compiler stopped unexpectedly: ${detail}`
+			: 'The compiler stopped unexpectedly.';
 	}
 
 	/** Reads the output directory. Returns an error message when the output breaks a limit. */
