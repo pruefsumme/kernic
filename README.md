@@ -7,7 +7,9 @@ multi-file project in the browser, see the rendered pages next to the source, an
 > (Gitea/Forgejo), team sharing and real-time collaboration are not built yet. See
 > [Status](#status) and the [backlog](docs/backlog.md).
 
-To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**.
+To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**. What has
+been checked for security and data safety, and what is still open, is in
+**[docs/security.md](docs/security.md)**.
 
 ## How it is put together
 

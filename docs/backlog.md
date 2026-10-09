@@ -8,30 +8,13 @@ that works on typst.app should work here, and work in it must never be lost.
 
 ## Next
 
-1. **Git remotes (Gitea/Forgejo)** — connect a project to a repository on a forge: push
-   checkpoints, pull and merge changes made elsewhere, import a project by cloning (allow-listed
-   hosts, scoped tokens stored as secrets, no hooks, limits on size and time).
+1. **Preview performance for long documents** — load pages only when they are visible, give each
+   page its size up front so nothing jumps, and address rendered pages by content so unchanged
+   pages are neither stored nor fetched again. (Review finding: 26 MB re-sent per change for a
+   74-page document.)
 
-2. **Security, safety and reliability audit** — a deliberate review, not a by-the-way one:
-   - Threat model written down: untrusted documents, archives, uploads, other users, the network.
-   - Authentication and sessions: cookie flags, session lifetime, rate limits, password policy,
-     account lockout behaviour, setup token handling.
-   - Authorization: every route, download, job, artifact and import checked for another user's
-     access (needs a second user; add tests).
-   - Worker isolation in the container deployment: no egress, read-only root, dropped
-     capabilities, resource limits; try to break out with hostile documents.
-   - Input handling: path validation, archive bombs, oversized bodies, content types, CSP.
-   - Data safety: atomic writes and fsync, behaviour on full disk, on crash mid-save, on database
-     loss; concurrent editing in two tabs; backup and restore drill; upgrade and failed-migration
-     behaviour.
-   - Parity check against typst.app for thesis work: fonts, bibliography, figures, large
-     documents (100+ pages) and compile time, PDF export options, packages.
-   - Dependency review and a `SECURITY.md` describing what is and is not protected.
-   - Unexplained: one end-to-end run (2026-10-11, while the history feature was being built) had
-     every test after the first history test fail quickly, as if the app had stopped; it did not
-     reproduce in 9 further full runs or under a stress test of concurrent saves, compiles and
-     restores. Keep server logs of test runs and look for a crash path.
-   Outcome: a written report in `docs/`, issues fixed or listed with severity, tests for each fix.
+2. **Automatic snapshots** between explicit checkpoints, kept apart from the checkpoint history,
+   so a bad edit can be undone even without a checkpoint.
 
 3. **UI polish** — the layout and flow are settled; make it more pleasant to look at and smoother:
    - Visual refinement: spacing rhythm, typography details, icon consistency, hover/active/focus
@@ -43,23 +26,32 @@ that works on typst.app should work here, and work in it must never be lost.
      optimistic file-tree updates.
    - A review of every screen at desktop, tablet and phone widths after the changes.
 
-4. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
+4. **Account page and user management** — change name and password, list and revoke sessions;
+   administrators create and disable accounts.
+
+5. **Git remotes (Gitea/Forgejo)** — connect a project to a repository on a forge: push
+   checkpoints, pull and merge changes made elsewhere, import a project by cloning (allow-listed
+   hosts, scoped tokens stored as secrets, no hooks, limits on size and time).
+
+6. **Remaining items of the security review** — see "Open" in [security.md](security.md):
+   per-job isolation inside the worker container, fairness in the compile queue, an audit log,
+   and the checks not yet exercised (real domain, ARM64, upgrade between versions).
+
+7. **Team access** — organizations/team workspaces in the UI, invitations, roles, share links,
    admin user management, audit events.
 
-5. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
+8. **Language server (Tinymist)** — completion, hover, go-to-definition, formatting and
    diagnostics while typing, behind the existing editor adapter.
 
-6. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
+9. **Real-time collaboration** — Yjs + Hocuspocus behind `/collab`, authorization before loading
    a document, presence and cursors, revocation when permissions change.
 
-7. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
+10. **Operations** — optional Redis/BullMQ job queue, optional S3-compatible storage, health and
    readiness details, structured logs with request ids, quotas per workspace.
 
 ## Smaller items
 
 - Packages: an admin view of installed packages; private (`@local`) packages uploaded by an admin.
-- Automatic safety snapshots between explicit checkpoints (for example every 30 minutes of
-  editing), kept apart from the checkpoint history.
 - History: restore a single file; compare any two checkpoints.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Project-wide search and replace.
@@ -67,7 +59,6 @@ that works on typst.app should work here, and work in it must never be lost.
 - Share dialog (depends on team access).
 - Dark theme, as an explicit choice.
 - Preview: only re-fetch pages that changed; click a page position to jump to the source.
-- Account page: change name, email and password; list and revoke sessions.
 
 ## Done
 
@@ -82,3 +73,4 @@ that works on typst.app should work here, and work in it must never be lost.
   specific error messages for missing and private packages.
 - Version history: checkpoints as Git commits per project, diff, restore, ZIP of a version;
   one lock per project for file changes and history operations.
+- Security, safety and reliability review with fixes and tests; report in `docs/security.md`.
