@@ -9,6 +9,9 @@ server.listen(config.port, config.host, () => {
 		`kernic worker listening on http://${config.host}:${config.port} ` +
 			`(typst ${toolchain.typstVersion}, sandbox: ${config.sandbox})`
 	);
+	if (config.sandbox === 'landlock') {
+		console.log('Each compile is confined with Landlock to its own files (verified at startup).');
+	}
 	if (config.sandbox === 'none') {
 		console.warn(
 			'Sandbox is "none": only prlimit bounds the compiler. Run this worker in a container ' +

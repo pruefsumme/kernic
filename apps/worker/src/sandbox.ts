@@ -11,6 +11,7 @@ export interface Toolchain {
 	typstVersion: string;
 	prlimitPath: string;
 	bwrapPath: string | null;
+	setprivPath: string | null;
 }
 
 export interface JobPaths {
@@ -64,10 +65,69 @@ export async function detectToolchain(typstBin: string, sandbox: SandboxMode): P
 		);
 	}
 
+	const setprivPath = findExecutable('setpriv');
+	if (sandbox === 'landlock') {
+		if (!setprivPath) throw new Error('KERNIC_WORKER_SANDBOX=landlock needs setpriv (util-linux).');
+		await assertLandlockWorks(setprivPath);
+	}
+
 	const { stdout } = await execFileAsync(typstPath, ['--version'], { timeout: 10_000 });
 	const typstVersion = /typst (\S+)/.exec(stdout)?.[1] ?? stdout.trim();
 
-	return { typstPath, typstVersion, prlimitPath, bwrapPath };
+	return { typstPath, typstVersion, prlimitPath, bwrapPath, setprivPath };
+}
+
+const READ = 'read-file,read-dir';
+const READ_EXECUTE = `${READ},execute`;
+const READ_WRITE = `${READ},write-file,make-reg,remove-file,truncate`;
+
+/** Directories with programs, libraries, fonts and font configuration. */
+function systemReadRules(): string[] {
+	const rules: string[] = [];
+	for (const directory of ['/usr', '/bin', '/sbin', '/lib', '/lib32', '/lib64']) {
+		// Symlinked directories (merged /usr) are covered by the rule for their target.
+		if (existsSync(directory) && !lstatSync(directory).isSymbolicLink()) {
+			rules.push('--landlock-rule', `path-beneath:${READ_EXECUTE}:${directory}`);
+		}
+	}
+	for (const directory of ['/etc/fonts', '/var/cache/fontconfig']) {
+		if (existsSync(directory)) rules.push('--landlock-rule', `path-beneath:${READ}:${directory}`);
+	}
+	return rules;
+}
+
+/**
+ * Proves at startup that Landlock is enforced: a restricted process must be
+ * able to run, and must be denied a file outside its rules. Without this, a
+ * kernel or util-linux without Landlock support could leave compiles
+ * unconfined while the configuration claims otherwise.
+ */
+async function assertLandlockWorks(setprivPath: string): Promise<void> {
+	const base = ['--landlock-access', 'fs', ...systemReadRules(), '--'];
+	const catPath = findExecutable('cat');
+	if (!catPath) throw new Error('cat is required for the Landlock self-test');
+
+	try {
+		await execFileAsync(setprivPath, [...base, catPath, '/usr/lib/os-release'], {
+			timeout: 10_000
+		});
+	} catch (error) {
+		throw new Error(
+			'KERNIC_WORKER_SANDBOX=landlock, but a Landlock-restricted process cannot run here. ' +
+				'It needs Linux 5.13 or newer and util-linux 2.40 or newer. ' +
+				`(${(error as Error).message.split('\n')[0]})`
+		);
+	}
+
+	const denied = await execFileAsync(setprivPath, [...base, catPath, '/proc/self/environ'], {
+		timeout: 10_000
+	}).then(
+		() => false,
+		() => true
+	);
+	if (!denied) {
+		throw new Error('Landlock is not enforced: a restricted process could read outside its rules.');
+	}
 }
 
 /** Typst arguments, with paths as seen from inside the (possibly remapped) job. */
@@ -137,7 +197,8 @@ function systemMounts(): string[] {
  * `prlimit` always applies per-process resource limits. With the `bwrap`
  * sandbox the compiler additionally runs in fresh namespaces: no network, an
  * empty environment, and a filesystem that only contains system libraries, the
- * read-only snapshot and the writable output directory.
+ * read-only snapshot and the writable output directory. With `landlock` it
+ * keeps the worker's view but may only open those same places.
  */
 export function buildCompileCommand(
 	toolchain: Toolchain,
@@ -153,6 +214,41 @@ export function buildCompileCommand(
 		return {
 			file: toolchain.prlimitPath,
 			args: [...limitsPrefix, toolchain.typstPath, ...typstArgs(format, entry, paths, limits)],
+			cwd: paths.sourceDir,
+			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
+		};
+	}
+
+	if (sandbox === 'landlock') {
+		if (!toolchain.setprivPath) throw new Error('setpriv is not available');
+		// The compiler keeps its real paths but can reach nothing beyond these rules:
+		// in particular not the files of other jobs or the worker's cache.
+		const rules = [
+			...systemReadRules(),
+			// The compiler itself, in case it is installed outside the system directories.
+			'--landlock-rule',
+			`path-beneath:read-file,execute:${toolchain.typstPath}`,
+			'--landlock-rule',
+			`path-beneath:${READ}:${paths.sourceDir}`,
+			'--landlock-rule',
+			`path-beneath:${READ}:${paths.packageCacheDir}`,
+			'--landlock-rule',
+			`path-beneath:${READ_WRITE}:${paths.outputDir}`
+		];
+		if (paths.packageDir) rules.push('--landlock-rule', `path-beneath:${READ}:${paths.packageDir}`);
+
+		return {
+			file: toolchain.prlimitPath,
+			args: [
+				...limitsPrefix,
+				toolchain.setprivPath,
+				'--landlock-access',
+				'fs',
+				...rules,
+				'--',
+				toolchain.typstPath,
+				...typstArgs(format, entry, paths, limits)
+			],
 			cwd: paths.sourceDir,
 			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
 		};

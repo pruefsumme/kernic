@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -403,6 +404,109 @@ describe('hostile documents', () => {
 		});
 	});
 });
+
+/**
+ * Landlock is tested with a stand-in for the compiler that tries to step outside
+ * its job: Typst itself refuses such paths, so the real compiler cannot show
+ * what the sandbox would stop if that refusal were bypassed.
+ */
+describe(
+	'landlock sandbox',
+	{ skip: !execFileSync('setpriv', ['--help']).toString().includes('landlock') },
+	() => {
+		async function runIntruder(sandbox: 'landlock' | 'none'): Promise<string> {
+			const workDir = await mkdtemp(path.join(tmpdir(), 'kernic-worker-test-'));
+			const cache = path.join(workDir, 'blobs');
+			const intruder = path.join(workDir, 'fake-typst');
+			await writeFile(
+				intruder,
+				[
+					'#!/bin/sh',
+					'if [ "$1" = "--version" ]; then echo "typst 0.0.0"; exit 0; fi',
+					'for last; do :; done',
+					'out=$(dirname "$last")',
+					'{',
+					'  printf "<svg width=\\"10pt\\" height=\\"10pt\\">"',
+					`  if ls -R ${cache} >/dev/null 2>&1; then echo "CACHE:readable"; else echo "CACHE:denied"; fi`,
+					'  if cat /etc/hostname >/dev/null 2>&1; then echo "ETC:readable"; else echo "ETC:denied"; fi',
+					'  if echo x > "$PWD/planted" 2>/dev/null; then echo "SOURCE:writable"; else echo "SOURCE:denied"; fi',
+					'  printf "</svg>"',
+					'} > "$out/page-1.svg"'
+				].join('\n'),
+				{ mode: 0o755 }
+			);
+
+			const { server } = await createWorker(
+				loadConfig({
+					KERNIC_WORKER_TOKEN: TOKEN,
+					KERNIC_WORKER_DIR: workDir,
+					KERNIC_WORKER_SANDBOX: sandbox,
+					KERNIC_TYPST_BIN: intruder
+				})
+			);
+			await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+			const harness: Harness = {
+				baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+				workDir,
+				close: async () => {
+					await new Promise((resolve) => server.close(resolve));
+					await rm(workDir, { recursive: true, force: true });
+				}
+			};
+			try {
+				const { body } = await compile(harness, { 'main.typ': 'anything' });
+				assert.equal(body.ok, true, JSON.stringify(body.diagnostics));
+				return Buffer.from(body.artifacts[0].data, 'base64').toString('utf8');
+			} finally {
+				await harness.close();
+			}
+		}
+
+		test('a compiler process cannot reach the cache, system files or its own sources', async () => {
+			const report = await runIntruder('landlock');
+			assert.match(report, /CACHE:denied/);
+			assert.match(report, /ETC:denied/);
+			assert.match(report, /SOURCE:denied/);
+		});
+
+		test('the same process without the sandbox can, which is what the sandbox is for', async () => {
+			const report = await runIntruder('none');
+			assert.match(report, /CACHE:readable/);
+			assert.match(report, /ETC:readable/);
+		});
+
+		test('real documents compile under Landlock, with fonts and packages', async () => {
+			const harness = await startWorker({ KERNIC_WORKER_SANDBOX: 'landlock' });
+			try {
+				const { body } = await compile(
+					harness,
+					{
+						'main.typ':
+							'#import "@preview/greeting:0.1.0": greet\n#set text(font: "DejaVu Sans Mono")\n= Title\n#greet("x") $x^2$'
+					},
+					{
+						packages: [
+							{
+								namespace: 'preview',
+								name: 'greeting',
+								version: '0.1.0',
+								files: {
+									'typst.toml':
+										'[package]\nname = "greeting"\nversion = "0.1.0"\nentrypoint = "lib.typ"\n',
+									'lib.typ': '#let greet(name) = [Hello #name]'
+								}
+							}
+						]
+					}
+				);
+				assert.equal(body.ok, true, JSON.stringify(body.diagnostics));
+				assert.deepEqual(body.diagnostics, []);
+			} finally {
+				await harness.close();
+			}
+		});
+	}
+);
 
 describe('bubblewrap sandbox', { skip: !existsSync('/usr/bin/bwrap') }, () => {
 	test('gives the compiler no network access', async () => {

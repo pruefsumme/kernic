@@ -1,7 +1,7 @@
 # Compile worker: the official Typst CLI plus a small Node service.
 # Build from the repository root:  docker build -f apps/worker/Dockerfile .
 
-FROM debian:bookworm-slim AS typst
+FROM debian:trixie-slim AS typst
 # Pinned Typst release. Update the version and both checksums together.
 ARG TYPST_VERSION=0.15.1
 ARG TYPST_SHA256_X86_64=a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
@@ -23,13 +23,21 @@ RUN set -eu; \
 	tar -xJf /tmp/typst.tar.xz -C /tmp; \
 	install -m 0755 "/tmp/${name}/typst" /usr/local/bin/typst
 
-FROM node:24-bookworm-slim
+# Debian 13: its util-linux (2.41) provides `setpriv` with Landlock support, which
+# confines each compile to its own files.
+FROM node:24-trixie-slim
 # Fonts available to every document, in addition to the ones Typst embeds
-# (Libertinus Serif, New Computer Modern, DejaVu Sans Mono). Projects can bring
-# their own font files; see docs/self-hosting.md for adding server-wide fonts.
+# (Libertinus Serif, New Computer Modern, DejaVu Sans Mono). Distribution
+# packages only, so each font has a clear licence and update path. Projects can
+# bring their own font files; see docs/self-hosting.md for adding server-wide fonts.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		fontconfig fonts-liberation2 fonts-dejavu fonts-noto-core \
+		fontconfig \
+		fonts-liberation2 fonts-dejavu fonts-noto-core \
+		fonts-inter fonts-roboto fonts-open-sans fonts-lato \
+		fonts-texgyre fonts-lmodern fonts-cmu fonts-stix \
+		fonts-linuxlibertine fonts-ebgaramond fonts-atkinson-hyperlegible \
+		fonts-firacode fonts-jetbrains-mono \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& fc-cache -f
 COPY --from=typst /usr/local/bin/typst /usr/local/bin/typst
@@ -38,13 +46,15 @@ WORKDIR /app
 COPY apps/worker/package.json ./
 COPY apps/worker/src ./src
 
-# Inside this image the container is the sandbox: run it read-only, without
-# capabilities and on a network with no route out (see deploy/compose.yaml).
-# bubblewrap cannot create namespaces under Docker's default seccomp profile.
+# Two layers of confinement. The container: read-only, without capabilities, on a
+# network with no route out (see deploy/compose.yaml). And inside it, Landlock:
+# each compile can only open its own job, never another project's files in the
+# worker's cache. (bubblewrap cannot create namespaces under Docker's default
+# seccomp profile; Landlock needs no privileges.)
 ENV NODE_ENV=production \
 	KERNIC_WORKER_HOST=0.0.0.0 \
 	KERNIC_WORKER_PORT=3101 \
-	KERNIC_WORKER_SANDBOX=none \
+	KERNIC_WORKER_SANDBOX=landlock \
 	KERNIC_WORKER_DIR=/work
 
 USER node

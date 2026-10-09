@@ -1,7 +1,15 @@
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-export type SandboxMode = 'bwrap' | 'none';
+/**
+ * How each compile is confined, on top of resource limits:
+ * - `bwrap`: fresh namespaces with bubblewrap (no network, private file system view).
+ *   Needs user namespaces, which containers usually do not allow.
+ * - `landlock`: the compiler may only read its own job and system files, and only
+ *   write its output folder. Works inside an unprivileged container.
+ * - `none`: resource limits only.
+ */
+export type SandboxMode = 'bwrap' | 'landlock' | 'none';
 
 export interface WorkerConfig {
 	host: string;
@@ -52,8 +60,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
 	}
 
 	const sandbox = env.KERNIC_WORKER_SANDBOX ?? 'bwrap';
-	if (sandbox !== 'bwrap' && sandbox !== 'none') {
-		throw new Error(`KERNIC_WORKER_SANDBOX must be "bwrap" or "none", got "${sandbox}"`);
+	if (sandbox !== 'bwrap' && sandbox !== 'landlock' && sandbox !== 'none') {
+		throw new Error(
+			`KERNIC_WORKER_SANDBOX must be "bwrap", "landlock" or "none", got "${sandbox}"`
+		);
 	}
 
 	return {
