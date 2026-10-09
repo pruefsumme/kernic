@@ -83,8 +83,10 @@ it must stay larger than the project limit.
 ### Fonts
 
 Documents can use the fonts built into Typst (Libertinus Serif, New Computer Modern, DejaVu Sans
-Mono), the Liberation, DejaVu and Noto families installed in the worker image, and any font files
-uploaded into the project itself. To make more fonts available to every project, put the font
+Mono), the families installed in the worker image (Liberation, DejaVu, Noto, Inter, Roboto, Open
+Sans, Lato, TeX Gyre, Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond,
+Atkinson Hyperlegible, Fira Code, JetBrains Mono), and any font files uploaded into the project
+itself. `docker compose exec worker typst fonts` lists every family. To make more fonts available to every project, put the font
 files in a folder next to `compose.yaml` and mount it into the worker:
 
 ```yaml
@@ -196,7 +198,10 @@ What the deployment does, and what it relies on you for.
   as an unprivileged user, has CPU, memory, process and time limits, and is attached only to an
   internal network: it cannot reach the internet, the database or the proxy. It holds none of the
   app's secrets; the worker token only lets the app talk to it. Its scratch space is in memory and
-  is gone when the container stops.
+  is gone when the container stops. Inside the container, each compile is further restricted
+  with Landlock to the files of its own job, so one document's compile cannot read another
+  project's files even if the compiler itself were tricked. This needs a host kernel of 5.13 or
+  newer; the worker refuses to start if the restriction is not enforced.
 - **Packages.** Only the app talks to the package registry. A package's code runs inside the
   same sandbox as the document that imports it.
 - **Network.** Only the proxy publishes ports. The database and the worker are not reachable from

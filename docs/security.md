@@ -60,8 +60,12 @@ signed-in user's files, and everything fetched from outside (packages).
   worker serves the next request.
 - **Tested:** documents cannot read `/proc/self/environ`, `/etc/passwd` or anything else
   outside their project, by absolute path or by `..`.
-- With `bubblewrap` (development, or a host install) each compile additionally sees only its
-  own files. In Docker this inner sandbox is not available; see open item 2.
+- Each compile is additionally confined to its own files: with `bubblewrap` in development,
+  and with Landlock (through `setpriv`) in the Docker image, where bubblewrap cannot run. The
+  worker checks at startup that the confinement is actually enforced and refuses to start
+  otherwise. **Tested** with a stand-in compiler that tries to read the worker's cache and
+  system files and to write into its sources: all denied under Landlock, all possible without
+  it. Also checked inside the running container.
 
 ### Uploads, archives, packages
 
@@ -127,6 +131,9 @@ signed-in user's files, and everything fetched from outside (packages).
     74-page document). Pages are now stored and addressed by their content and loaded only near
     the screen. Measured on a 75-page document: opening fetches 3 pages; an edit fetches only
     the pages in view that actually changed.
+11. In Docker, all compiles ran as one user with access to the worker's whole file cache, so a
+    compiler bug that escaped Typst's own confinement could have read other projects' files.
+    Each compile is now restricted with Landlock to its own job.
 
 ## Open
 
@@ -135,21 +142,17 @@ each is in the [backlog](backlog.md).
 
 1. **Nothing is recorded between checkpoints.** A bad edit followed by more saves can only be
    undone back to the last explicit checkpoint. Automatic snapshots are planned.
-2. **In Docker, compiles of different projects share one unprivileged user.** Typst confines a
-   document to its project; if that confinement were bypassed by a compiler bug, the process
-   could read other projects' files held in the worker's cache. Options: a per-job sandbox
-   inside the container (needs user namespaces enabled for it), or a per-project cache.
-3. **No account self-service.** There is no page to change one's password or see and revoke
+2. **No account self-service.** There is no page to change one's password or see and revoke
    sessions, and no interface to create further accounts.
-4. **Package authenticity rests on HTTPS and first download.** The registry publishes no
+3. **Package authenticity rests on HTTPS and first download.** The registry publishes no
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
-5. **Single process.** Rate limits and the per-project lock live in memory; running several app
+4. **Single process.** Rate limits and the per-project lock live in memory; running several app
    instances is not supported.
-6. **No fairness in the compile queue.** One account can queue compiles for many projects.
-7. **No audit log** of sign-ins, access changes or deletions.
-8. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
+5. **No fairness in the compile queue.** One account can queue compiles for many projects.
+6. **No audit log** of sign-ins, access changes or deletions.
+7. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
    between two released versions, power loss during a save.
-9. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
+8. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.
 
@@ -163,7 +166,7 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Multi-file projects, includes, images, data files | Work; tested. |
 | Bibliography | Works (`bibliography()` with `.bib`; used by the Article template). |
 | Packages from Typst Universe | Work, including dependencies. Old package versions that do not support Typst 0.15 fail exactly as they do with the CLI. `@local` packages: not supported. |
-| Fonts | Typst's embedded fonts plus Liberation, DejaVu and Noto in the Docker image; other fonts must be uploaded into the project or added to the server. typst.app offers a larger built-in selection. |
+| Fonts | 276 families in the Docker image: Typst's embedded fonts plus Liberation, DejaVu, Noto, Inter, Roboto, Open Sans, Lato, TeX Gyre, Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond, Atkinson Hyperlegible, Fira Code and JetBrains Mono. Other fonts are uploaded into the project or added to the server. Not compared one by one with typst.app's selection. |
 | Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s to compile, 1.0 s to export. The preview loads only the pages in view and re-fetches only pages that changed. |
 | Preview | Server-rendered after each save (about a second behind typing for a long document). typst.app renders in the browser as you type. |
 | Editor assistance | Syntax highlighting and completion of built-in functions. No hover documentation, go-to-definition or formatting yet. |

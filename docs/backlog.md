@@ -25,43 +25,7 @@ the item is built.
 
 ## Next
 
-### 1. Isolate each compile inside the worker container (review item 2)
-
-**Problem.** In Docker, all compiles run as one unprivileged user and the worker's file cache
-holds files of every project. Typst confines a document to its project, but a compiler bug that
-escaped that confinement could read other projects' cached files.
-
-**Options considered.**
-
-- *bubblewrap inside the container* — what development uses. Tested here: user namespaces are
-  refused in a default Docker container (`unshare: Operation not permitted`); enabling them means
-  weakening the container's seccomp profile. Rejected.
-- *A different Unix user per compile* — needs `CAP_SETUID`, which the container deliberately
-  does not have. Rejected.
-- *gVisor or Kata as container runtime* — strong, but an operator-side requirement, not something
-  the project can ship. Worth documenting as optional hardening.
-- *Landlock* — a Linux security module that lets an unprivileged process restrict its own file
-  access. **Chosen.**
-
-**Solution.** Run the compiler through `setpriv --landlock-access fs --landlock-rule …` from
-util-linux, which is already used for `prlimit`. Rules per compile: read and execute on system
-libraries, read on fonts, the job's source and its packages, write only on the job's output
-folder. Everything else, including the cache of other projects, is unreachable.
-
-- Tested here: in `debian:13-slim` with all capabilities dropped, `no-new-privileges` and a
-  non-root user, a process restricted this way could read its allowed folder and was denied
-  another folder and all writes. Docker's default seccomp profile allows the Landlock system
-  calls (Docker 29).
-- `setpriv` gained Landlock support in util-linux 2.40; Debian 12 ships 2.38, Debian 13 ships
-  2.41. The worker image therefore moves from `node:24-bookworm-slim` to `node:24-trixie-slim`
-  (exists; checked).
-- Steps: add a `landlock` sandbox mode beside `bwrap` and `none`; make it the default in the
-  image; the worker refuses to start if the kernel lacks Landlock rather than run unconfined;
-  test that a compile cannot read the blob cache or another job's folder.
-- Limits: Landlock needs kernel 5.13 or newer (any current distribution). It restricts files,
-  not CPU or memory, which stay with `prlimit` and the container limits.
-
-### 2. Automatic snapshots between checkpoints (review item 1)
+### 1. Automatic snapshots between checkpoints
 
 **Problem.** Between explicit checkpoints nothing is recorded. A wrong paste followed by an hour
 of saves can only be undone back to the last checkpoint.
@@ -81,7 +45,7 @@ checkpoint history (what will later be pushed to a forge) stays clean. No new de
 - Tests: snapshot cadence with a fake clock, thinning, restore from a snapshot, and that
   snapshots never appear in the checkpoint list.
 
-### 3. Account page, user management and audit log (review items 3 and 7)
+### 2. Account page, user management and audit log
 
 **Solution.** Built on what exists (scrypt, the sessions table); no new dependency.
 
@@ -97,7 +61,7 @@ checkpoint history (what will later be pushed to a forge) stays clean. No new de
 - Later, single sign-on against Gitea/Forgejo or another provider with `openid-client`, the
   widely used certified OpenID Connect client for Node. Not verified here.
 
-### 4. UI polish
+### 3. UI polish
 
 The layout and flow are settled; make it more pleasant to look at and smoother.
 
@@ -109,7 +73,7 @@ The layout and flow are settled; make it more pleasant to look at and smoother.
 - Perceived speed: skeletons that match the layout, optimistic file-tree updates.
 - A review of every screen at desktop, tablet and phone widths after the changes.
 
-### 5. Faster preview while typing (parity with typst.app)
+### 4. Faster preview while typing (parity with typst.app)
 
 **Problem.** The preview follows a save by about a second for a long document, because every
 compile starts cold.
@@ -120,7 +84,7 @@ compile starts cold.
   (pre-release builds against release candidates), so preview and exported PDF could differ, and
   it puts a second renderer in the product. Not now.
 - *Tinymist's preview server* — incremental, renders only the visible part, and supports
-  jumping between source and page. The right long-term answer together with item 6, but it is a
+  jumping between source and page. The right long-term answer together with the Tinymist item below, but it is a
   second process per open project with its own protocol. Later.
 - *The official CLI in watch mode* — **chosen as the first step.** One long-lived
   `typst watch` per open project keeps the compiler's incremental state.
@@ -136,7 +100,7 @@ Cold compiles remain for exports and for the first compile.
 - Risk to check when building: detecting "this compile is finished" reliably from watch mode's
   output, and memory held per warm project.
 
-### 6. Editor assistance and source-to-page jumps with Tinymist
+### 5. Editor assistance and source-to-page jumps with Tinymist
 
 Hover documentation, go-to-definition, formatting, rename and diagnostics while typing; clicking
 a place on a page jumps to its source and back.
@@ -146,34 +110,24 @@ a place on a page jumps to its source and back.
   `tinymist preview` (with partial rendering).
 - Browser side: `@codemirror/lsp-client`, behind the existing editor adapter, over a WebSocket.
 - Server side: one Tinymist process per open project in a container with the same isolation as
-  the compile worker (item 1), no network, bounded count and memory. It sees project files
+  the compile worker (Landlock, no network), bounded count and memory. It sees project files
   through the language-server protocol, not a shared volume.
 - Not verified: resource use per session, and how Tinymist's preview is best embedded.
 
-### 7. Fonts (parity with typst.app)
+### 6. Fonts in the editor
 
-**Problem.** The image has Typst's embedded fonts plus Liberation, DejaVu and Noto. Documents
-written elsewhere often name other families and fall back silently.
+The packaged font families are in the worker image now. Still to do: show the server's font
+families in the editor (from `typst fonts`), complete them inside `font: "…"`, and turn the
+compiler's "unknown font family" warning into a message that says how to add the font. An
+optional image variant with Noto CJK (91 MB).
 
-**Solution.** Distribution packages only, so every font has a clear licence and update path.
-Available in Debian 13 (checked): Inter, Roboto, Open Sans, Lato, Montserrat, TeX Gyre,
-Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond, Fira Code, JetBrains
-Mono, Atkinson Hyperlegible, and Noto CJK (91 MB, so as an optional image variant). Not packaged
-there: IBM Plex, Source Serif/Sans, Libertinus (embedded in Typst anyway), New Computer Modern
-(embedded).
-
-- Add the packaged set to the worker image; keep the documented mount for further fonts.
-- Show the server's font families in the editor (from `typst fonts`), complete them inside
-  `font: "…"`, and turn the compiler's "unknown font family" warning into a message that says
-  how to add the font.
-
-### 8. PDF export options
+### 7. PDF export options
 
 Expose what the compiler already supports: PDF standard (PDF/A variants, PDF/UA), page ranges
 and tagged PDF, in an export dialog. The worker accepts them as a fixed list of allowed values,
 never as free-form arguments.
 
-### 9. Fair compile queue, and readiness for more than one app process (review items 5 and 6)
+### 8. Fair compile queue, and readiness for more than one app process
 
 No broker needed for this; PostgreSQL covers it.
 
@@ -185,7 +139,7 @@ No broker needed for this; PostgreSQL covers it.
 - BullMQ with Redis stays an option for many workers; it is established, but it is a second
   service to run and back up, so only when a single worker is not enough.
 
-### 10. Package trust (review item 4)
+### 9. Package trust
 
 **Finding.** Typst Universe's index publishes no checksums (checked: the index has name,
 version, entrypoint, authors, licence and similar fields only), and the official CLI does not
@@ -200,7 +154,7 @@ verify any either. Authenticity rests on HTTPS to the registry.
   of the same version has a different hash (for example after a restore onto a new server).
 - Private packages: administrators upload a package archive into a `local` namespace.
 
-### 11. Checks not yet exercised (review items 8 and 9)
+### 10. Checks not yet exercised
 
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
@@ -211,22 +165,23 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 12. Git remotes (Gitea/Forgejo)
+### 11. Git remotes (Gitea/Forgejo)
 
 Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 13. Team access
+### 12. Team access
 
-Team workspaces in the interface, invitations, roles, share links. Builds on item 3.
+Team workspaces in the interface, invitations, roles, share links. Builds on the account and
+user management item.
 
-### 14. Real-time collaboration
+### 13. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 15. Operations
+### 14. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -257,3 +212,5 @@ details.
 - Security, safety and reliability review with fixes and tests; report in `docs/security.md`.
 - Preview performance for long documents: pages stored by content hash, sized up front, loaded
   only near the screen (`a6f95dd`).
+- Each compile confined with Landlock inside the worker container; worker image on Debian 13
+  with a larger set of packaged fonts.
