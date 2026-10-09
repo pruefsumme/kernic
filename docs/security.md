@@ -130,7 +130,8 @@ signed-in user's files, and everything fetched from outside (packages).
 
 ## Open
 
-Ordered by how much they matter for someone writing a thesis here.
+Ordered by how much they matter for someone writing a thesis here. The researched solution for
+each is in the [backlog](backlog.md).
 
 1. **Nothing is recorded between checkpoints.** A bad edit followed by more saves can only be
    undone back to the last explicit checkpoint. Automatic snapshots are planned.
