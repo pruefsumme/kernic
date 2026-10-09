@@ -3,7 +3,15 @@ import postgres from 'postgres';
 import yazl from 'yazl';
 import { hashPassword } from '../src/lib/server/auth/passwords.ts';
 import { baseURL, databaseUrl, externalBaseURL } from './environment.ts';
-import { appendSource, createProject, pages, panel, saveState, test } from './helpers.ts';
+import {
+	appendSource,
+	createProject,
+	loadedPages,
+	pages,
+	panel,
+	saveState,
+	test
+} from './helpers.ts';
 
 // A second account is created directly in the test database; there is no
 // user management in the interface yet.
@@ -77,9 +85,13 @@ test('another user can neither see nor change a project, through any route', asy
 	const owner = page.request;
 	const history = await (await owner.get(`${api}/history`)).json();
 	const checkpointId: string = history.checkpoints[0].id;
-	const jobId = new URL((await pages(page).first().getAttribute('src'))!, baseURL).pathname.split(
-		'/'
-	)[5]!;
+	const pageUrl = new URL((await loadedPages(page).first().getAttribute('src'))!, baseURL).pathname;
+	const exportJob = await owner.post(`${api}/compile`, {
+		data: { format: 'pdf' },
+		headers: { origin: baseURL }
+	});
+	const jobId: string = (await exportJob.json()).job.id;
+	await owner.get(`${api}/jobs/${jobId}?wait=1`);
 	const [{ workspace_id: ownerWorkspace }] = await (async () => {
 		const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 		try {
@@ -100,7 +112,8 @@ test('another user can neither see nor change a project, through any route', asy
 	// The ids are real: the owner reaches each of these.
 	for (const url of [
 		`${api}/jobs/${jobId}`,
-		`${api}/jobs/${jobId}/pages/1`,
+		pageUrl,
+		`${api}/jobs/${jobId}/pdf`,
 		`${api}/history/${checkpointId}/diff`,
 		`${api}/history/${checkpointId}/archive`,
 		`/api/imports/${importId}`
@@ -156,7 +169,7 @@ test('another user can neither see nor change a project, through any route', asy
 			() => outsiderRequest.post(`${api}/compile`, { data: { format: 'pdf' }, ...write })
 		],
 		['job status', () => outsiderRequest.get(`${api}/jobs/${jobId}`)],
-		['rendered page', () => outsiderRequest.get(`${api}/jobs/${jobId}/pages/1`)],
+		['rendered page', () => outsiderRequest.get(pageUrl)],
 		['exported pdf', () => outsiderRequest.get(`${api}/jobs/${jobId}/pdf`)],
 		['zip of files', () => outsiderRequest.get(`${api}/archive`)],
 		['history', () => outsiderRequest.get(`${api}/history`)],

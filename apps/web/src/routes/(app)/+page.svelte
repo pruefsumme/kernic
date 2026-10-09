@@ -180,9 +180,9 @@
 						<li>
 							<a href="/projects/{project.id}">
 								<span class="thumb" aria-hidden="true">
-									{#if project.thumbnailJobId}
+									{#if project.thumbnailHash}
 										<img
-											src="/api/projects/{project.id}/jobs/{project.thumbnailJobId}/pages/1"
+											src="/api/projects/{project.id}/pages/{project.thumbnailHash}"
 											alt=""
 											loading="lazy"
 										/>

@@ -4,6 +4,7 @@ import {
 	createProject,
 	editorText,
 	expectNoSidewaysScroll,
+	loadedPages,
 	pages,
 	panel,
 	previewStatus,
@@ -287,4 +288,41 @@ test('the editor is usable from the keyboard', async ({ page }) => {
 	await page.keyboard.press('Escape');
 	await page.keyboard.press('Tab');
 	await expect(page.locator('.cm-content')).not.toBeFocused();
+});
+
+test('a long document loads only the pages in view and re-fetches only what changed', async ({
+	page
+}) => {
+	await createProject(page, 'Blank document', 'Long document');
+	const pageRequests: string[] = [];
+	page.on('request', (request) => {
+		if (/\/pages\/[0-9a-f]{64}$/.test(request.url())) pageRequests.push(request.url());
+	});
+
+	// Forty pages, each with its own text, and a last page with the closing line.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+a');
+	await page.keyboard.type('#for i in range(40) [Page number #i #pagebreak(weak: true)]\nThe end.');
+	await expect(pages(page)).toHaveCount(41);
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	// Every page has its place, but only those near the top were fetched.
+	const loadedAtTop = await loadedPages(page).count();
+	expect(loadedAtTop).toBeGreaterThan(0);
+	expect(loadedAtTop).toBeLessThan(10);
+	expect(pageRequests.length).toBeLessThan(10);
+
+	// Changing the last page fetches nothing while the top of the document is in view.
+	pageRequests.length = 0;
+	await appendSource(page, ' With a postscript.');
+	await expect(saveState(page)).toContainText('Saved');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	expect(pageRequests).toEqual([]);
+
+	// Scrolling to the end brings in the last page, with the new text's rendering.
+	await pages(page).last().scrollIntoViewIfNeeded();
+	await expect(pages(page).last().locator('img')).toBeVisible();
+	expect(pageRequests.length).toBeGreaterThan(0);
+	expect(pageRequests.length).toBeLessThan(10);
+	await expectNoSidewaysScroll(page);
 });

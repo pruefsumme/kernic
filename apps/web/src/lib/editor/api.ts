@@ -14,6 +14,14 @@ export interface Diagnostic {
 	column: number | null;
 }
 
+export interface RenderedPage {
+	/** Hash of the page's content; the page's address. */
+	hash: string;
+	/** Size in points. */
+	width: number;
+	height: number;
+}
+
 export interface CompileJob {
 	id: string;
 	format: 'svg' | 'pdf';
@@ -21,6 +29,7 @@ export interface CompileJob {
 	revision: number | null;
 	diagnostics: Diagnostic[];
 	pageCount: number | null;
+	pages: RenderedPage[] | null;
 	typstVersion: string | null;
 	durationMs: number | null;
 	error: string | null;
@@ -123,7 +132,7 @@ export function createProjectApi(projectId: string) {
 
 	return {
 		fileUrl: (path: string) => `${base}/files/${encodePath(path)}`,
-		pageUrl: (jobId: string, page: number) => `${base}/jobs/${jobId}/pages/${page}`,
+		pageUrl: (hash: string) => `${base}/pages/${hash}`,
 		pdfUrl: (jobId: string) => `${base}/jobs/${jobId}/pdf`,
 		archiveUrl: `${base}/archive`,
 

@@ -3,6 +3,7 @@ import {
 	type CompileJob,
 	type Diagnostic,
 	type ProjectApi,
+	type RenderedPage,
 	type TreeEntry,
 	type UploadResult
 } from './api.ts';
@@ -42,7 +43,7 @@ export type OpenFile =
 
 export interface Render {
 	jobId: string;
-	pageCount: number;
+	pages: RenderedPage[];
 	/** Project revision these pages were rendered from. */
 	revision: number | null;
 }
@@ -286,7 +287,7 @@ export class EditorSession {
 		if (job.typstVersion) this.typstVersion = job.typstVersion;
 
 		if (job.status === 'succeeded') {
-			this.render = { jobId: job.id, pageCount: job.pageCount ?? 0, revision: job.revision };
+			this.render = { jobId: job.id, pages: job.pages ?? [], revision: job.revision };
 			this.diagnostics = job.diagnostics;
 			this.compile = { status: 'done', durationMs: job.durationMs };
 		} else if (job.status === 'failed') {

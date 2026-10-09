@@ -61,7 +61,7 @@ signed-in user's files, and everything fetched from outside (packages).
 - **Tested:** documents cannot read `/proc/self/environ`, `/etc/passwd` or anything else
   outside their project, by absolute path or by `..`.
 - With `bubblewrap` (development, or a host install) each compile additionally sees only its
-  own files. In Docker this inner sandbox is not available; see open item 3.
+  own files. In Docker this inner sandbox is not available; see open item 2.
 
 ### Uploads, archives, packages
 
@@ -123,31 +123,32 @@ signed-in user's files, and everything fetched from outside (packages).
 9. The app closed idle connections after 5 seconds, sooner than the proxy does. A request sent on
    a connection that was just being closed failed with "The server could not be reached" (seen
    once in a test run, on an upload). The app now keeps idle connections longer than the proxy.
+10. Long documents were slow to preview: every change re-sent every page (26 MB of SVG for a
+    74-page document). Pages are now stored and addressed by their content and loaded only near
+    the screen. Measured on a 75-page document: opening fetches 3 pages; an edit fetches only
+    the pages in view that actually changed.
 
 ## Open
 
 Ordered by how much they matter for someone writing a thesis here.
 
-1. **Long documents are slow to preview.** A 74-page document compiles in about 1.1 s, but each
-   change re-sends all pages (26 MB of SVG before compression). Pages should be loaded only
-   when visible and re-fetched only when they changed.
-2. **Nothing is recorded between checkpoints.** A bad edit followed by more saves can only be
+1. **Nothing is recorded between checkpoints.** A bad edit followed by more saves can only be
    undone back to the last explicit checkpoint. Automatic snapshots are planned.
-3. **In Docker, compiles of different projects share one unprivileged user.** Typst confines a
+2. **In Docker, compiles of different projects share one unprivileged user.** Typst confines a
    document to its project; if that confinement were bypassed by a compiler bug, the process
    could read other projects' files held in the worker's cache. Options: a per-job sandbox
    inside the container (needs user namespaces enabled for it), or a per-project cache.
-4. **No account self-service.** There is no page to change one's password or see and revoke
+3. **No account self-service.** There is no page to change one's password or see and revoke
    sessions, and no interface to create further accounts.
-5. **Package authenticity rests on HTTPS and first download.** The registry publishes no
+4. **Package authenticity rests on HTTPS and first download.** The registry publishes no
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
-6. **Single process.** Rate limits and the per-project lock live in memory; running several app
+5. **Single process.** Rate limits and the per-project lock live in memory; running several app
    instances is not supported.
-7. **No fairness in the compile queue.** One account can queue compiles for many projects.
-8. **No audit log** of sign-ins, access changes or deletions.
-9. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
+6. **No fairness in the compile queue.** One account can queue compiles for many projects.
+7. **No audit log** of sign-ins, access changes or deletions.
+8. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
    between two released versions, power loss during a save.
-10. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
+9. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.
 
@@ -162,7 +163,7 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Bibliography | Works (`bibliography()` with `.bib`; used by the Article template). |
 | Packages from Typst Universe | Work, including dependencies. Old package versions that do not support Typst 0.15 fail exactly as they do with the CLI. `@local` packages: not supported. |
 | Fonts | Typst's embedded fonts plus Liberation, DejaVu and Noto in the Docker image; other fonts must be uploaded into the project or added to the server. typst.app offers a larger built-in selection. |
-| Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s to compile, 1.0 s to export. Preview transfer is the bottleneck (open item 1). |
+| Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s to compile, 1.0 s to export. The preview loads only the pages in view and re-fetches only pages that changed. |
 | Preview | Server-rendered after each save (about a second behind typing for a long document). typst.app renders in the browser as you type. |
 | Editor assistance | Syntax highlighting and completion of built-in functions. No hover documentation, go-to-definition or formatting yet. |
 | Collaboration, comments, sharing links | Not available. |

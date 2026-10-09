@@ -62,7 +62,7 @@ test('project files and rendered pages are served inertly', async ({ page }) => 
 	expect(html.headers()['content-security-policy']).toContain('sandbox');
 	expect(html.headers()['x-content-type-options']).toBe('nosniff');
 
-	const pageImage = page.locator('img.sheet').first();
+	const pageImage = page.locator('.sheet img').first();
 	await expect(pageImage).toBeVisible();
 	const rendered = await page.request.get((await pageImage.getAttribute('src'))!);
 	expect(rendered.headers()['content-type']).toBe('image/svg+xml');

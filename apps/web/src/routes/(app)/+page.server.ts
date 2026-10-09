@@ -22,14 +22,14 @@ export const load: PageServerLoad = async (event) => {
 	]);
 
 	// The newest rendered first page of each project doubles as its thumbnail.
-	const renders = await sql<{ project_id: string; id: string }[]>`
-		SELECT DISTINCT ON (project_id) project_id, id
+	const renders = await sql<{ project_id: string; first_page: string | null }[]>`
+		SELECT DISTINCT ON (project_id) project_id, pages->0->>'hash' AS first_page
 		FROM compile_jobs
 		WHERE project_id = ANY(${projects.map((project) => project.id)}::uuid[])
-			AND format = 'svg' AND status = 'succeeded'
+			AND format = 'svg' AND status = 'succeeded' AND pages IS NOT NULL
 		ORDER BY project_id, finished_at DESC
 	`;
-	const thumbnailJob = new Map(renders.map((row) => [row.project_id, row.id]));
+	const thumbnail = new Map(renders.map((row) => [row.project_id, row.first_page]));
 
 	return {
 		projects: projects.map((project) => ({
@@ -39,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 			workspaceId: project.workspaceId,
 			workspaceName: project.workspaceName,
 			role: project.role,
-			thumbnailJobId: thumbnailJob.get(project.id) ?? null
+			thumbnailHash: thumbnail.get(project.id) ?? null
 		})),
 		workspaces: workspaces.filter((workspace) => canWrite(workspace.role)),
 		templateCategories: [...templateCategories],

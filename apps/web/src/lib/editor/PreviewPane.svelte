@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import Icon from '#lib/components/Icon.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 
@@ -7,12 +8,22 @@
 	const ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2];
 	/** `null` fits the page to the width of the pane. */
 	let zoom = $state<number | null>(null);
-	/** Width of each page at 100%, read from the rendered SVG. */
-	let naturalWidths = $state<number[]>([]);
+
+	const pages = $derived(
+		(session.render?.pages ?? []).map((page, index) => ({
+			...page,
+			number: index + 1,
+			url: session.api.pageUrl(page.hash)
+		}))
+	);
+	/** CSS pixels per typographic point: page sizes arrive in points. */
+	const PX_PER_PT = 96 / 72;
 
 	/** Rendered width of the first page, to report the scale that "fit width" results in. */
 	let firstPageWidth = $state(0);
-	const fitScale = $derived(naturalWidths[0] ? firstPageWidth / naturalWidths[0] : 1);
+	const fitScale = $derived(
+		pages[0] && firstPageWidth > 0 ? firstPageWidth / (pages[0].width * PX_PER_PT) : 1
+	);
 
 	function step(direction: 1 | -1) {
 		const current = zoom ?? fitScale;
@@ -24,38 +35,52 @@
 		zoom = next ?? (direction === 1 ? ZOOM_STEPS.at(-1)! : ZOOM_STEPS[0]!);
 	}
 
-	/**
-	 * Records a page's size at 100% once its image has loaded, and for the first
-	 * page also its size on screen. Done with listeners rather than an `onload`
-	 * attribute, which the content security policy would block in server-rendered HTML.
-	 */
-	function measure(index: number) {
-		return (image: HTMLImageElement) => {
-			const record = () => {
-				if (image.naturalWidth > 0) naturalWidths[index] = image.naturalWidth;
-			};
-			record();
-			image.addEventListener('load', record);
-
-			const observer = new ResizeObserver(() => {
-				if (index === 0) firstPageWidth = image.clientWidth;
-			});
-			observer.observe(image);
-			return () => {
-				image.removeEventListener('load', record);
-				observer.disconnect();
-			};
-		};
+	/** Follows the size of the first page on screen. */
+	function trackWidth(sheet: HTMLElement) {
+		const observer = new ResizeObserver(() => (firstPageWidth = sheet.clientWidth));
+		observer.observe(sheet);
+		return () => observer.disconnect();
 	}
 
-	const pages = $derived(
-		session.render
-			? Array.from({ length: session.render.pageCount }, (_, index) => ({
-					number: index + 1,
-					url: session.api.pageUrl(session.render!.jobId, index + 1)
-				}))
-			: []
-	);
+	/**
+	 * Which image each page slot shows. A slot only takes the page's current
+	 * image while it is on or near the screen; away from it, the slot keeps what
+	 * it last showed. So scrolling loads pages as they come up, and an edit that
+	 * shifts every page of a long document only re-fetches the few in view.
+	 */
+	let shown = $state<(string | undefined)[]>([]);
+	const near = new SvelteSet<number>();
+	let canvas = $state<HTMLElement>();
+	let proximity: IntersectionObserver | undefined;
+
+	$effect(() => {
+		if (!canvas) return;
+		proximity = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					const index = Number((entry.target as HTMLElement).dataset.index);
+					if (entry.isIntersecting) near.add(index);
+					else near.delete(index);
+				}
+			},
+			// Start loading a page about one screen before it scrolls into view.
+			{ root: canvas, rootMargin: '100% 0px' }
+		);
+		for (const sheet of canvas.querySelectorAll('[data-index]')) proximity.observe(sheet);
+		return () => proximity?.disconnect();
+	});
+
+	function watch(sheet: HTMLElement) {
+		proximity?.observe(sheet);
+		return () => proximity?.unobserve(sheet);
+	}
+
+	$effect(() => {
+		for (const index of near) {
+			const url = pages[index]?.url;
+			if (url && shown[index] !== url) shown[index] = url;
+		}
+	});
 
 	const compiling = $derived(session.compile.status === 'compiling');
 	const errorLabel = $derived(
@@ -128,19 +153,33 @@
 
 	<div class="progress" class:active={compiling} aria-hidden="true"></div>
 
-	<div class="canvas" class:stale={session.previewIsStale || session.compile.status === 'failed'}>
+	<div
+		bind:this={canvas}
+		class="canvas"
+		class:stale={session.previewIsStale || session.compile.status === 'failed'}
+	>
 		{#if pages.length > 0}
 			{#each pages as page, index (page.number)}
-				<img
-					{@attach measure(index)}
+				<!--
+					Each slot has the page's size from the start, so the document does not
+					jump while pages load. A page that did not change keeps its address
+					and is not fetched again.
+				-->
+				<div
+					{@attach watch}
+					{@attach index === 0 ? trackWidth : undefined}
 					class="sheet"
 					class:fit={zoom === null}
-					src={page.url}
-					alt="Page {page.number}"
-					style:width={zoom === null
-						? undefined
-						: `${(naturalWidths[index] ?? naturalWidths[0] ?? 794) * zoom}px`}
-				/>
+					data-index={index}
+					style:aspect-ratio="{page.width} / {page.height}"
+					style:width={zoom === null ? undefined : `${page.width * PX_PER_PT * zoom}px`}
+				>
+					{#if shown[index]}
+						<img src={shown[index]} alt="Page {page.number}" decoding="async" />
+					{:else}
+						<span class="visually-hidden">Page {page.number}, not loaded yet</span>
+					{/if}
+				</div>
 			{/each}
 		{:else if compiling || session.compile.status === 'idle'}
 			<div class="sheet placeholder" aria-hidden="true"></div>
@@ -331,12 +370,17 @@
 		display: block;
 		flex: none;
 		max-width: none;
-		height: auto;
 		background: #fff;
 		box-shadow:
 			0 0 0 1px oklch(20% 0.02 250 / 0.08),
 			0 1px 3px oklch(20% 0.02 250 / 0.12);
 		transition: opacity 0.15s;
+	}
+
+	.sheet img {
+		display: block;
+		width: 100%;
+		height: 100%;
 	}
 
 	.sheet.fit {

@@ -40,7 +40,10 @@ export async function createProject(
 export const previewStatus = (page: Page) =>
 	page.getByRole('region', { name: 'Preview' }).getByRole('status');
 export const saveState = (page: Page) => page.locator('.save');
-export const pages = (page: Page) => page.locator('img.sheet');
+/** The page slots of the preview; one per page of the document, loaded or not. */
+export const pages = (page: Page) => page.locator('.sheet[data-index]');
+/** The page images that have actually been loaded. */
+export const loadedPages = (page: Page) => page.locator('.sheet[data-index] img');
 export const panel = (page: Page, name: 'Files' | 'Outline' | 'Issues' | 'History') =>
 	page.getByRole('complementary', { name });
 

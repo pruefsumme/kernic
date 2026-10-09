@@ -22,10 +22,8 @@ export const load: PageServerLoad = async (event) => {
 		canWrite: canWrite(role),
 		entries,
 		// Shown immediately while the first compile of this visit runs.
-		lastRender: lastRender && {
-			jobId: lastRender.id,
-			pageCount: lastRender.pageCount ?? 0,
-			revision: lastRender.revision
-		}
+		lastRender: lastRender?.pages
+			? { jobId: lastRender.id, pages: lastRender.pages, revision: lastRender.revision }
+			: null
 	};
 };

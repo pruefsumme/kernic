@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
@@ -31,12 +32,22 @@ export interface CompileJob {
 	sourceHash: string | null;
 	diagnostics: Diagnostic[];
 	pageCount: number | null;
+	/** Rendered pages of a successful preview job, in order. */
+	pages: RenderedPage[] | null;
 	typstVersion: string | null;
 	durationMs: number | null;
 	/** Infrastructure problem, shown when status is `errored`. */
 	error: string | null;
 	createdAt: Date;
 	finishedAt: Date | null;
+}
+
+export interface RenderedPage {
+	/** SHA-256 of the page's SVG; also its address in the page store. */
+	hash: string;
+	/** Page size in points, so the preview can lay pages out before they load. */
+	width: number;
+	height: number;
 }
 
 interface JobRow {
@@ -48,6 +59,7 @@ interface JobRow {
 	source_hash: string | null;
 	diagnostics: Diagnostic[];
 	page_count: number | null;
+	pages: RenderedPage[] | null;
 	typst_version: string | null;
 	duration_ms: number | null;
 	error: string | null;
@@ -65,6 +77,7 @@ function toJob(row: JobRow): CompileJob {
 		sourceHash: row.source_hash,
 		diagnostics: row.diagnostics,
 		pageCount: row.page_count,
+		pages: row.pages,
 		typstVersion: row.typst_version,
 		durationMs: row.duration_ms,
 		error: row.error,
@@ -81,6 +94,7 @@ const MAX_CONCURRENT_JOBS = 2;
 /** Finished jobs kept per project and format; older ones and their files are removed. */
 const KEEP_FINISHED_JOBS = 3;
 const POLL_INTERVAL_MS = 5_000;
+const PAGE_GRACE_MS = 5 * 60_000;
 
 const finished = new EventEmitter();
 finished.setMaxListeners(0);
@@ -167,11 +181,13 @@ export function jobArtifactsDir(projectId: string, jobId: string): string {
 	return path.join(projectArtifactsDir(projectId), jobId);
 }
 
-/** Absolute path of a rendered page (1-based), or null if the job has no such page. */
-export function pageArtifactPath(job: CompileJob, page: number): string | null {
-	if (job.format !== 'svg' || job.status !== 'succeeded') return null;
-	if (!Number.isInteger(page) || page < 1 || page > (job.pageCount ?? 0)) return null;
-	return path.join(jobArtifactsDir(job.projectId, job.id), `page-${page}.svg`);
+const pageStoreDir = (projectId: string) => path.join(projectArtifactsDir(projectId), 'pages');
+
+const PAGE_HASH = /^[0-9a-f]{64}$/;
+
+/** Absolute path of a rendered page in the project's page store, or null for an invalid hash. */
+export function pagePath(projectId: string, hash: string): string | null {
+	return PAGE_HASH.test(hash) ? path.join(pageStoreDir(projectId), `${hash}.svg`) : null;
 }
 
 export function pdfArtifactPath(job: CompileJob): string | null {
@@ -285,26 +301,61 @@ async function runJob(job: CompileJob): Promise<void> {
 		WHERE id = ${job.id}
 	`;
 
-	let pageCount: number | null = null;
-	if (result.ok) {
+	let pages: RenderedPage[] | null = null;
+	if (result.ok && job.format === 'svg') {
+		pages = await storePages(
+			job.projectId,
+			result.artifacts.map((artifact) => Buffer.from(artifact.data, 'base64'))
+		);
+	} else if (result.ok) {
 		const directory = jobArtifactsDir(job.projectId, job.id);
 		await fs.mkdir(directory, { recursive: true });
-		// The worker names pages page-0001.svg …; store them by plain page number.
-		for (const [index, artifact] of result.artifacts.entries()) {
-			const name = job.format === 'svg' ? `page-${index + 1}.svg` : 'output.pdf';
-			await fs.writeFile(path.join(directory, name), Buffer.from(artifact.data, 'base64'));
-		}
-		pageCount = job.format === 'svg' ? result.artifacts.length : null;
+		await fs.writeFile(
+			path.join(directory, 'output.pdf'),
+			Buffer.from(result.artifacts[0]!.data, 'base64')
+		);
 	}
 
 	await finishJob(job, {
 		status: result.ok ? 'succeeded' : 'failed',
 		diagnostics: result.diagnostics,
-		pageCount,
+		pages,
 		typstVersion: result.typstVersion,
 		durationMs: result.durationMs
 	});
 	await pruneJobs(job.projectId, job.format);
+}
+
+const SVG_SIZE = /<svg[^>]*\swidth="([\d.]+)pt"\s+height="([\d.]+)pt"/;
+
+/**
+ * Stores pages by content hash. A page that is identical to one already stored
+ * (most pages, between two compiles of a long document) costs nothing.
+ */
+async function storePages(projectId: string, svgs: Buffer[]): Promise<RenderedPage[]> {
+	const directory = pageStoreDir(projectId);
+	await fs.mkdir(directory, { recursive: true });
+
+	const pages: RenderedPage[] = [];
+	for (const svg of svgs) {
+		const hash = createHash('sha256').update(svg).digest('hex');
+		const target = path.join(directory, `${hash}.svg`);
+		try {
+			// Mark a reused page as fresh, which keeps it out of a concurrent clean-up.
+			const now = new Date();
+			await fs.utimes(target, now, now);
+		} catch {
+			// Write beside the final name and rename, so a reader never sees half a page.
+			const temporary = `${target}.${randomUUID()}.tmp`;
+			await fs.writeFile(temporary, svg);
+			await fs.rename(temporary, target);
+		}
+
+		const size = SVG_SIZE.exec(svg.subarray(0, 512).toString('latin1'));
+		// A4 in points, should a future Typst change the header this is read from.
+		pages.push({ hash, width: Number(size?.[1] ?? 595.28), height: Number(size?.[2] ?? 841.89) });
+	}
+	return pages;
 }
 
 async function finishJob(
@@ -312,7 +363,7 @@ async function finishJob(
 	outcome: {
 		status: 'succeeded' | 'failed';
 		diagnostics: Diagnostic[];
-		pageCount?: number | null;
+		pages?: RenderedPage[] | null;
 		typstVersion?: string;
 		durationMs?: number;
 	}
@@ -321,7 +372,8 @@ async function finishJob(
 		UPDATE compile_jobs
 		SET status = ${outcome.status},
 			diagnostics = ${sql.json(outcome.diagnostics as never)},
-			page_count = ${outcome.pageCount ?? null},
+			page_count = ${outcome.pages?.length ?? null},
+			pages = ${outcome.pages ? sql.json(outcome.pages as never) : null},
 			typst_version = ${outcome.typstVersion ?? null},
 			duration_ms = ${outcome.durationMs ?? null},
 			finished_at = now()
@@ -351,5 +403,27 @@ async function pruneJobs(projectId: string, format: OutputFormat): Promise<void>
 	`;
 	for (const { id } of stale) {
 		await fs.rm(jobArtifactsDir(projectId, id), { recursive: true, force: true });
+	}
+	if (format === 'svg') await prunePages(projectId);
+}
+
+/** Removes stored pages that no remaining job refers to. */
+async function prunePages(projectId: string): Promise<void> {
+	const rows = await sql<{ hash: string }[]>`
+		SELECT DISTINCT page->>'hash' AS hash
+		FROM compile_jobs, jsonb_array_elements(pages) AS page
+		WHERE project_id = ${projectId} AND pages IS NOT NULL
+	`;
+	const referenced = new Set(rows.map((row) => `${row.hash}.svg`));
+
+	// Pages written or reused in the last minutes may belong to a compile that
+	// has stored them but not yet recorded its result.
+	const cutoff = Date.now() - PAGE_GRACE_MS;
+	const directory = pageStoreDir(projectId);
+	for (const name of await fs.readdir(directory).catch(() => [])) {
+		if (!name.endsWith('.svg') || referenced.has(name)) continue;
+		const file = path.join(directory, name);
+		const info = await fs.stat(file).catch(() => null);
+		if (info && info.mtimeMs < cutoff) await fs.rm(file, { force: true });
 	}
 }
