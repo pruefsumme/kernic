@@ -15,6 +15,12 @@ import { bundledMigrations, migrate } from '#lib/server/db/migrate.ts';
 import { startImportCleanup } from '#lib/server/imports/imports.ts';
 
 export const init: ServerInit = async () => {
+	// A promise nobody awaited must not take the whole server down with everyone's
+	// open editors. Log it loudly instead; real programming errors still surface.
+	process.on('unhandledRejection', (reason) => {
+		console.error('Unhandled promise rejection (the server keeps running):', reason);
+	});
+
 	// Migrate before serving anything, so an upgrade is: replace the image, start it.
 	const applied = await migrate(sql, bundledMigrations());
 	if (applied.length > 0) console.log(`Applied database migrations: ${applied.join(', ')}`);
@@ -62,5 +68,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('x-content-type-options', 'nosniff');
 	response.headers.set('referrer-policy', 'same-origin');
 	response.headers.set('x-frame-options', 'DENY');
+	// No other site may hold a window reference to Kernic, and Kernic uses none
+	// of the browser's device features.
+	response.headers.set('cross-origin-opener-policy', 'same-origin');
+	response.headers.set(
+		'permissions-policy',
+		'camera=(), microphone=(), geolocation=(), payment=()'
+	);
 	return response;
 };

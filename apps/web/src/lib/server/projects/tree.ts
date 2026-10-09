@@ -200,8 +200,18 @@ export async function writeTreeFile(
 	await fs.mkdir(temporaryDirectory, { recursive: true });
 	const temporary = path.join(temporaryDirectory, randomUUID());
 	try {
-		await fs.writeFile(temporary, content, { flag: 'wx', mode: 0o640 });
+		// Flush the content to disk before the rename and the rename itself after
+		// it. A power cut then leaves either the old file or the complete new one,
+		// never an empty or half-written file under the real name.
+		const handle = await fs.open(temporary, 'wx', 0o640);
+		try {
+			await handle.writeFile(content);
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
 		await fs.rename(temporary, absolute);
+		await syncDirectory(path.dirname(absolute));
 	} catch (error) {
 		await fs.rm(temporary, { force: true });
 		throw error;
@@ -249,6 +259,16 @@ export async function deleteTreeEntry(root: string, entryPath: string): Promise<
 	const absolute = await resolveInTree(root, normalize(entryPath));
 	if (!(await exists(absolute))) throw new TreeError('not-found', 'File or folder not found.');
 	await fs.rm(absolute, { recursive: true });
+}
+
+/** Makes a rename or creation inside `directory` durable. */
+async function syncDirectory(directory: string): Promise<void> {
+	const handle = await fs.open(directory, 'r');
+	try {
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
 }
 
 async function exists(absolute: string): Promise<boolean> {

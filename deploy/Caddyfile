@@ -3,6 +3,9 @@
 {$KERNIC_SITE_ADDRESS} {
 	encode zstd gzip
 
+	# Browsers that reached Kernic over HTTPS once keep using HTTPS. Ignored on plain HTTP.
+	header Strict-Transport-Security "max-age=31536000"
+
 	# Caddy passes the public protocol, host and client address to the app in
 	# X-Forwarded-* headers; the app relies on them for its origin checks.
 	reverse_proxy app:3000

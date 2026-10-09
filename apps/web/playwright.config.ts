@@ -15,7 +15,8 @@ import {
 
 /**
  * End-to-end tests run against the production build (`pnpm build`) and a real
- * compile worker, with their own database and data directory.
+ * compile worker, with their own database and data directory. What the servers
+ * print is kept in `e2e/.logs/`, so a crash during a run can be read afterwards.
  */
 export default defineConfig({
 	testDir: 'e2e',
@@ -48,7 +49,7 @@ export default defineConfig({
 		? undefined
 		: [
 				{
-					command: 'node ../worker/src/main.ts',
+					command: 'mkdir -p e2e/.logs && node ../worker/src/main.ts > e2e/.logs/worker.log 2>&1',
 					url: `http://127.0.0.1:${workerPort}/healthz`,
 					reuseExistingServer: false,
 					env: {
@@ -63,7 +64,7 @@ export default defineConfig({
 					reuseExistingServer: false
 				},
 				{
-					command: 'node e2e/reset.ts && node build',
+					command: 'mkdir -p e2e/.logs && node e2e/reset.ts && node build > e2e/.logs/app.log 2>&1',
 					url: `${baseURL}/healthz`,
 					reuseExistingServer: false,
 					env: {
@@ -71,6 +72,10 @@ export default defineConfig({
 						HOST: '127.0.0.1',
 						PROTOCOL_HEADER: 'x-forwarded-proto',
 						BODY_SIZE_LIMIT: '64M',
+						// As in the Docker image: idle connections outlive the client's own
+						// reuse window, so a request never lands on a connection being closed.
+						KEEP_ALIVE_TIMEOUT: '130',
+						HEADERS_TIMEOUT: '135',
 						DATABASE_URL: databaseUrl,
 						KERNIC_DATA_DIR: dataDir,
 						KERNIC_SETUP_TOKEN: setupToken,

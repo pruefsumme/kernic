@@ -30,10 +30,14 @@ RUN mkdir /data && chown node:node /data
 # The app is meant to sit behind the reverse proxy from deploy/compose.yaml,
 # which tells it the public protocol, host and client address. BODY_SIZE_LIMIT
 # must stay above the largest allowed project archive (KERNIC_MAX_PROJECT_MB).
+# Idle connections are kept open longer than the proxy keeps its side (2 minutes),
+# so the proxy never sends a request on a connection the app is just closing.
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
 	PORT=3000 \
 	BODY_SIZE_LIMIT=256M \
+	KEEP_ALIVE_TIMEOUT=130 \
+	HEADERS_TIMEOUT=135 \
 	PROTOCOL_HEADER=x-forwarded-proto \
 	HOST_HEADER=x-forwarded-host \
 	ADDRESS_HEADER=x-forwarded-for \
