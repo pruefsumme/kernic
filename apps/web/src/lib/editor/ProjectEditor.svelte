@@ -6,6 +6,7 @@
 	import AppShell, { type RailItem } from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Menu from '#lib/components/Menu.svelte';
+	import QuickOpen, { type QuickItem } from '#lib/components/QuickOpen.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
 	import { formatBytes } from '#lib/format.ts';
 	import { createProjectApi, type Diagnostic, type TreeEntry } from './api.ts';
@@ -277,6 +278,88 @@
 			onclick: () => toggle('history')
 		}
 	]);
+	let quickOpen = $state(false);
+	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+	const quickOpenKeys = isMac ? '⌘K' : 'Ctrl+K';
+
+	/** Opens a file from the palette and puts the cursor into it. */
+	async function jumpTo(path: string) {
+		if (!(await open(path))) return;
+		await tick();
+		view?.focus();
+	}
+
+	/** Everything the palette can reach: files, headings of the open file, and actions. */
+	const quickItems = $derived.by<QuickItem[]>(() => {
+		const show = (next: Panel) => () => (openPanel = next);
+		const files = session.entries
+			.filter((entry) => entry.type === 'file')
+			.map<QuickItem>((entry) => ({
+				id: `file:${entry.path}`,
+				label: entry.path,
+				kind: entry.path === file?.path ? 'Open file' : 'File',
+				icon: /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(entry.path) ? 'image' : 'file',
+				run: () => void jumpTo(entry.path)
+			}));
+		const current = file?.kind === 'text' ? file.path : null;
+		const sections = current
+			? headings.map<QuickItem>((heading) => ({
+					id: `heading:${heading.line}`,
+					label: heading.text,
+					kind: `Heading, line ${heading.line}`,
+					icon: 'outline',
+					run: () => void reveal(current, heading.line)
+				}))
+			: [];
+		const actions: QuickItem[] = [
+			{
+				id: 'export',
+				label: 'Export PDF',
+				kind: 'Action',
+				icon: 'download',
+				run: () => void exportPdf()
+			},
+			{
+				id: 'zip',
+				label: 'Download all files (ZIP)',
+				kind: 'Action',
+				icon: 'download',
+				run: () => location.assign(session.api.archiveUrl)
+			},
+			{ id: 'files', label: 'Show files', kind: 'Action', icon: 'files', run: show('files') },
+			{
+				id: 'outline',
+				label: 'Show outline',
+				kind: 'Action',
+				icon: 'outline',
+				run: show('outline')
+			},
+			{ id: 'issues', label: 'Show issues', kind: 'Action', icon: 'issues', run: show('issues') },
+			{
+				id: 'history',
+				label: 'Show history and checkpoints',
+				kind: 'Action',
+				icon: 'history',
+				run: show('history')
+			},
+			{
+				id: 'settings',
+				label: 'Project settings',
+				kind: 'Action',
+				icon: 'settings',
+				run: () => void goto(`/projects/${project.id}/settings`)
+			},
+			{
+				id: 'projects',
+				label: 'All projects',
+				kind: 'Action',
+				icon: 'projects',
+				run: () => void goto('/')
+			}
+		];
+		return [...files, ...sections, ...actions];
+	});
+
 	const footer = $derived<RailItem[]>([
 		{
 			id: 'settings',
@@ -295,6 +378,10 @@
 			event.preventDefault();
 			void session.save();
 		}
+		if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'k') {
+			event.preventDefault();
+			quickOpen = !quickOpen;
+		}
 	}}
 	onbeforeunload={(event) => {
 		// Ask before closing the tab while edits have not reached the server.
@@ -306,10 +393,20 @@
 	}}
 />
 
+<QuickOpen
+	bind:open={quickOpen}
+	items={quickItems}
+	label="Go to a file or heading, or run an action"
+/>
+
 <AppShell {destinations} {footer} scroll={false}>
 	{#snippet menus()}
 		<Menu>
 			{#snippet trigger()}File{/snippet}
+			<button role="menuitem" onclick={() => (quickOpen = true)}>
+				Go to file or heading… <span class="keys">{quickOpenKeys}</span>
+			</button>
+			<hr />
 			<button role="menuitem" disabled={session.exporting} onclick={exportPdf}>Export PDF</button>
 			<a role="menuitem" href={session.api.archiveUrl} download>Download all files (ZIP)</a>
 			<hr />
@@ -538,6 +635,13 @@
 </AppShell>
 
 <style>
+	.keys {
+		margin-left: auto;
+		padding-left: var(--s-4);
+		color: var(--ink-2);
+		font-size: var(--t-meta);
+	}
+
 	.project-name {
 		overflow: hidden;
 		font-weight: 600;

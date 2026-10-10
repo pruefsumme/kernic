@@ -127,7 +127,6 @@ details.
   against Gitea/Forgejo or another provider with `openid-client`.
 - Polish, second round: optimistic file-tree updates, a skeleton for the first render of a
   project, drag and drop to move files within the tree.
-- Quick open: a palette (Ctrl+K) to jump to a file or heading and to run the menu actions.
 - Render a thumbnail for projects that have none yet (after an upgrade or a restore).
 
 ## Done
@@ -153,6 +152,8 @@ details.
   renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.
 - Account page (name, password, sessions), people management by invitation and reset links,
   activity log.
+- Quick open (Ctrl+K, or File → Go to file or heading): jump to a file or heading, or run an
+  action, by typing a few letters.
 - Files can be dropped anywhere on the editor screen; images dropped or pasted into a Typst
   source are stored beside it and inserted at the cursor. Dropdowns match the other fields.
 - Faster preview while typing: the worker keeps one `typst watch` per recently edited project

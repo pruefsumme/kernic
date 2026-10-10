@@ -361,6 +361,53 @@ test('the editor is usable from the keyboard', async ({ page }) => {
 	await expect(page.locator('.cm-content')).not.toBeFocused();
 });
 
+test('the palette jumps to files and headings and runs actions from the keyboard', async ({
+	page
+}) => {
+	await createProject(page, 'Report', 'Quick open');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	const palette = page.getByRole('dialog', { name: /Go to a file or heading/ });
+	const field = palette.getByRole('combobox');
+
+	// A few letters find a file in a folder; Enter opens it with the cursor in the text.
+	await page.keyboard.press('ControlOrMeta+k');
+	await expect(field).toBeFocused();
+	await field.fill('intro');
+	await expect(palette.getByRole('option').first()).toContainText('chapters/introduction.typ');
+	await page.keyboard.press('Enter');
+	await expect(palette).toBeHidden();
+	await expect(page).toHaveURL(/file=chapters%2Fintroduction\.typ/);
+	await expect(page.locator('.cm-content')).toBeFocused();
+
+	// Headings of the open file can be reached the same way.
+	await page.keyboard.press('ControlOrMeta+k');
+	await field.fill('Introduction');
+	const heading = palette
+		.getByRole('option')
+		.filter({ hasText: /Heading, line/ })
+		.first();
+	await expect(heading).toBeVisible();
+	await heading.click();
+	await expect(palette).toBeHidden();
+
+	// Arrow keys move through the results, and actions run from here too.
+	await page.getByRole('banner').getByRole('button', { name: 'File' }).click();
+	await page.getByRole('menuitem', { name: /Go to file or heading/ }).click();
+	await field.fill('show hist');
+	await expect(palette.getByRole('option')).toHaveCount(1);
+	await page.keyboard.press('ArrowDown');
+	await expect(palette.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+	await page.keyboard.press('Enter');
+	await expect(panel(page, 'History')).toBeVisible();
+
+	// Nothing found says so, and Escape closes without doing anything.
+	await page.keyboard.press('ControlOrMeta+k');
+	await field.fill('qqqq');
+	await expect(palette.getByRole('status')).toContainText('Nothing matches');
+	await page.keyboard.press('Escape');
+	await expect(palette).toBeHidden();
+});
+
 test('a long document loads only the pages in view and re-fetches only what changed', async ({
 	page
 }) => {
