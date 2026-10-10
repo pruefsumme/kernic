@@ -146,18 +146,22 @@
 
 			<aside class="details" aria-live="polite">
 				{#if selected}
-					<div class="preview">
-						<img
-							src="/template-previews/{selected.id}.svg"
-							alt="First page of the {selected.name} template"
-						/>
-					</div>
-					<h3>{selected.name}</h3>
-					<p>{selected.description}</p>
-					<p class="files">
-						{selected.files.length === 1 ? '1 file' : `${selected.files.length} files`}:
-						{selected.files.join(', ')}
-					</p>
+					{#key selected.id}
+						<div class="arrive">
+							<div class="preview">
+								<img
+									src="/template-previews/{selected.id}.svg"
+									alt="First page of the {selected.name} template"
+								/>
+							</div>
+							<h3>{selected.name}</h3>
+							<p>{selected.description}</p>
+							<p class="files">
+								{selected.files.length === 1 ? '1 file' : `${selected.files.length} files`}:
+								{selected.files.join(', ')}
+							</p>
+						</div>
+					{/key}
 				{/if}
 			</aside>
 		</div>
@@ -252,9 +256,15 @@
 		color: var(--ink-2);
 	}
 
+	.search {
+		transition:
+			border-color var(--fast) var(--ease-out),
+			box-shadow var(--fast) var(--ease-out);
+	}
+
 	.search:focus-within {
-		outline: 2px solid var(--focus);
-		outline-offset: 1px;
+		border-color: var(--focus);
+		box-shadow: 0 0 0 3px var(--focus-ring);
 	}
 
 	.search input {
@@ -283,6 +293,13 @@
 		font: inherit;
 		font-size: var(--t-ui);
 		cursor: pointer;
+	}
+
+	.chip {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			border-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out);
 	}
 
 	.chip:hover {
@@ -326,9 +343,29 @@
 	.thumb,
 	.preview {
 		display: block;
-		border: 1px solid var(--rule);
-		background: var(--surface);
+		background: #fff;
+		box-shadow: var(--shadow-sheet);
 		overflow: hidden;
+	}
+
+	.thumb {
+		transition:
+			box-shadow var(--medium) var(--ease-out),
+			translate var(--medium) var(--ease-out);
+	}
+
+	/* The preview of the chosen template fades in when the choice changes. */
+	@keyframes arrive {
+		from {
+			opacity: 0;
+			translate: 0 4px;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.arrive {
+			animation: arrive var(--medium) var(--ease-out);
+		}
 	}
 
 	.thumb {
@@ -347,12 +384,14 @@
 	}
 
 	.option:hover .thumb {
-		border-color: var(--control-border);
+		box-shadow: var(--shadow-sheet-raised);
+		translate: 0 -2px;
 	}
 
 	.option input:checked + .thumb {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent);
+		box-shadow:
+			0 0 0 2px var(--accent),
+			var(--shadow-sheet);
 	}
 
 	.option input:focus-visible + .thumb {
@@ -376,6 +415,12 @@
 		gap: var(--s-2);
 		justify-items: start;
 		color: var(--ink-2);
+	}
+
+	.details .arrive {
+		display: grid;
+		align-content: start;
+		gap: var(--s-2);
 	}
 
 	.details {

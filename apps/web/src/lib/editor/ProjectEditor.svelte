@@ -230,7 +230,7 @@
 			<span class="save">Read only</span>
 		{:else if file?.kind === 'text'}
 			{#if session.saveState === 'saved'}
-				<span class="save"><Icon name="check" size={14} /> Saved</span>
+				<span class="save settled"><Icon name="check" size={14} /> Saved</span>
 			{:else if session.saveState === 'saving'}
 				<span class="save">Saving…</span>
 			{:else if session.saveState === 'unsaved'}
@@ -497,6 +497,12 @@
 		touch-action: none;
 	}
 
+	.divider {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			border-color var(--fast) var(--ease-out);
+	}
+
 	.divider:hover,
 	.divider:focus-visible {
 		background: var(--accent-soft);
@@ -515,6 +521,19 @@
 		border-left: 3px solid var(--error);
 		background: var(--error-soft);
 		font-size: var(--t-ui);
+	}
+
+	@keyframes banner-in {
+		from {
+			opacity: 0;
+			translate: 0 -6px;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.banner {
+			animation: banner-in var(--medium) var(--ease-out);
+		}
 	}
 
 	.banner-actions {
@@ -580,6 +599,12 @@
 			font-size: var(--t-ui);
 			font-weight: 500;
 			cursor: pointer;
+		}
+
+		.tabs button {
+			transition:
+				color var(--fast) var(--ease-out),
+				border-color var(--medium) var(--ease-out);
 		}
 
 		.tabs button[aria-pressed='true'] {

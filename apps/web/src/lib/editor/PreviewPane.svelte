@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
 	import Icon from '#lib/components/Icon.svelte';
+	import PageImage from './PageImage.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 
 	let { session, onshowissues }: { session: EditorSession; onshowissues: () => void } = $props();
@@ -110,7 +111,7 @@
 				{#if session.previewIsStale}
 					<span class="note">Out of date · updates after saving</span>
 				{:else}
-					<Icon name="check" size={16} />
+					<span class="settled"><Icon name="check" size={16} /></span>
 					Up to date
 					<span class="note">
 						· {pages.length === 1 ? '1 page' : `${pages.length} pages`}
@@ -175,7 +176,7 @@
 					style:width={zoom === null ? undefined : `${page.width * PX_PER_PT * zoom}px`}
 				>
 					{#if shown[index]}
-						<img src={shown[index]} alt="Page {page.number}" decoding="async" />
+						<PageImage url={shown[index]} alt="Page {page.number}" />
 					{:else}
 						<span class="visually-hidden">Page {page.number}, not loaded yet</span>
 					{/if}
@@ -306,6 +307,17 @@
 		cursor: pointer;
 	}
 
+	.zoom button {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out);
+	}
+
+	.settled {
+		display: grid;
+		color: var(--accent);
+	}
+
 	.zoom button:hover:not(:disabled) {
 		background: var(--sunken);
 		color: var(--ink);
@@ -367,20 +379,13 @@
 	}
 
 	.sheet {
+		position: relative;
 		display: block;
 		flex: none;
 		max-width: none;
 		background: #fff;
-		box-shadow:
-			0 0 0 1px oklch(20% 0.02 250 / 0.08),
-			0 1px 3px oklch(20% 0.02 250 / 0.12);
-		transition: opacity 0.15s;
-	}
-
-	.sheet img {
-		display: block;
-		width: 100%;
-		height: 100%;
+		box-shadow: var(--shadow-sheet);
+		transition: opacity var(--medium) var(--ease-out);
 	}
 
 	.sheet.fit {
@@ -394,7 +399,11 @@
 	}
 
 	.stale .sheet {
-		opacity: 0.6;
+		opacity: 0.55;
+	}
+
+	.placeholder {
+		box-shadow: var(--shadow-sheet);
 	}
 
 	.placeholder {

@@ -354,6 +354,10 @@
 		border-radius: var(--radius);
 	}
 
+	.checkpoints li {
+		transition: background-color var(--fast) var(--ease-out);
+	}
+
 	.checkpoints li:hover,
 	.checkpoints li:focus-within {
 		background: var(--sunken);

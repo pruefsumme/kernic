@@ -45,7 +45,14 @@
 	--syn-reference: oklch(45% 0.14 330);
 	--syn-markup: oklch(40% 0.02 250);
 
-	--shadow-float: 0 1px 2px oklch(20% 0.02 250 / 0.08), 0 8px 24px oklch(20% 0.02 250 / 0.12);
+	--shadow-float:
+		0 0 0 1px oklch(20% 0.02 250 / 0.04), 0 2px 4px oklch(20% 0.02 250 / 0.06),
+		0 12px 32px oklch(20% 0.02 250 / 0.14);
+	/* A sheet of paper lying on the desk, and the same sheet picked up. */
+	--shadow-sheet: 0 0 0 1px oklch(20% 0.02 250 / 0.08), 0 1px 2px oklch(20% 0.02 250 / 0.08);
+	--shadow-sheet-raised:
+		0 0 0 1px oklch(20% 0.02 250 / 0.1), 0 2px 4px oklch(20% 0.02 250 / 0.06),
+		0 10px 24px oklch(20% 0.02 250 / 0.12);
 
 	/* Type */
 	--font-ui: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, 'Segoe UI', sans-serif;
@@ -69,6 +76,12 @@
 	--radius-float: 8px;
 	--control-height: 2.25rem;
 
+	/* Motion: quick, eased-out responses; nothing moves unless something changed. */
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--fast: 120ms;
+	--medium: 200ms;
+	--focus-ring: oklch(55% 0.17 264 / 0.22);
+
 	/* Shell */
 	--rail-width: 4.25rem;
 	--topbar-height: 3rem;
@@ -83,6 +96,14 @@
 html {
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
+	/* Quiet scrollbars that match the chrome instead of the system's heavy default. */
+	scrollbar-width: thin;
+	scrollbar-color: oklch(80% 0.01 250) transparent;
+}
+
+* {
+	scrollbar-width: inherit;
+	scrollbar-color: inherit;
 }
 
 body {
@@ -162,6 +183,18 @@ pre {
 	text-decoration: none;
 	white-space: nowrap;
 	cursor: pointer;
+	box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+	transition:
+		background-color var(--fast) var(--ease-out),
+		border-color var(--fast) var(--ease-out),
+		color var(--fast) var(--ease-out),
+		translate var(--fast) var(--ease-out);
+}
+
+/* A pressed button gives slightly, and comes back from wherever it is. */
+.button:active:not(:disabled) {
+	translate: 0 1px;
+	box-shadow: none;
 }
 
 .button:hover {
@@ -200,6 +233,7 @@ pre {
 .button.quiet {
 	border-color: transparent;
 	background: transparent;
+	box-shadow: none;
 }
 
 .button.quiet:hover {
@@ -240,6 +274,15 @@ pre {
 	color: var(--ink);
 	font: inherit;
 	font-size: var(--t-body);
+	transition:
+		border-color var(--fast) var(--ease-out),
+		box-shadow var(--fast) var(--ease-out);
+}
+
+.input:focus-visible {
+	outline: none;
+	border-color: var(--focus);
+	box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .input::placeholder {
@@ -269,6 +312,102 @@ pre {
 	overflow: hidden;
 	clip-path: inset(50%);
 	white-space: nowrap;
+}
+
+/*
+ * Dialogs and menus arrive instead of popping: a short fade with a few pixels
+ * of travel, and the backdrop fades with them. Without motion they just appear.
+ */
+@media (prefers-reduced-motion: no-preference) {
+	dialog,
+	[popover] {
+		opacity: 0;
+		translate: 0 6px;
+		transition:
+			opacity var(--medium) var(--ease-out),
+			translate var(--medium) var(--ease-out),
+			overlay var(--medium) allow-discrete,
+			display var(--medium) allow-discrete;
+	}
+
+	[popover] {
+		translate: 0 -4px;
+		transition-duration: var(--fast);
+	}
+
+	dialog[open],
+	[popover]:popover-open {
+		opacity: 1;
+		translate: 0 0;
+	}
+
+	@starting-style {
+		dialog[open] {
+			opacity: 0;
+			translate: 0 6px;
+		}
+
+		[popover]:popover-open {
+			opacity: 0;
+			translate: 0 -4px;
+		}
+	}
+
+	dialog::backdrop {
+		opacity: 0;
+		transition:
+			opacity var(--medium) var(--ease-out),
+			overlay var(--medium) allow-discrete,
+			display var(--medium) allow-discrete;
+	}
+
+	dialog[open]::backdrop {
+		opacity: 1;
+	}
+
+	@starting-style {
+		dialog[open]::backdrop {
+			opacity: 0;
+		}
+	}
+
+	/* Moving between screens: the content cross-fades, the rail and top bar stay put. */
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation-duration: 160ms;
+		animation-timing-function: var(--ease-out);
+	}
+}
+
+/* A check mark that draws itself when a state settles (saved, up to date). */
+@keyframes draw-check {
+	from {
+		stroke-dashoffset: 18;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
+.settled svg path {
+	stroke-dasharray: 18;
+	animation: draw-check 320ms var(--ease-out) both;
+}
+
+/* Placeholder for content that is on its way: a slow, faint sweep. */
+@keyframes skeleton-sweep {
+	from {
+		background-position: 150% 0;
+	}
+	to {
+		background-position: -50% 0;
+	}
+}
+
+.skeleton {
+	background: linear-gradient(100deg, var(--sunken) 40%, var(--ground) 50%, var(--sunken) 60%) 0 0 /
+		200% 100%;
+	animation: skeleton-sweep 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

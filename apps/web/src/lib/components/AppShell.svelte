@@ -192,6 +192,8 @@
 		padding-bottom: var(--s-2);
 		background: var(--ground);
 		overflow-y: auto;
+		/* The chrome keeps its place while the content changes between screens. */
+		view-transition-name: rail;
 	}
 
 	.topbar {
@@ -202,6 +204,7 @@
 		padding: 0 var(--s-3);
 		border-bottom: 1px solid var(--rule);
 		background: var(--ground);
+		view-transition-name: topbar;
 	}
 
 	.mark {
@@ -210,6 +213,11 @@
 		flex: none;
 		height: var(--topbar-height);
 		color: var(--ink);
+		transition: color var(--fast) var(--ease-out);
+	}
+
+	.mark:hover {
+		color: var(--accent);
 	}
 
 	.group {
@@ -239,6 +247,12 @@
 		cursor: pointer;
 	}
 
+	.rail-item {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out);
+	}
+
 	.rail-item:hover {
 		background: var(--sunken);
 		color: var(--ink);
@@ -247,6 +261,32 @@
 	.rail-item.active {
 		background: var(--accent-soft);
 		color: var(--accent);
+	}
+
+	/* A marker on the rail's outer edge shows where you are; it grows in when set. */
+	.rail-item::before {
+		content: '';
+		position: absolute;
+		left: calc(-1 * var(--s-1));
+		top: 50%;
+		width: 3px;
+		height: 0;
+		border-radius: 0 2px 2px 0;
+		background: var(--accent);
+		translate: 0 -50%;
+		transition: height var(--medium) var(--ease-out);
+	}
+
+	.rail-item.active::before {
+		height: 1.5rem;
+	}
+
+	.rail-item:active .glyph {
+		scale: 0.94;
+	}
+
+	.glyph {
+		transition: scale var(--fast) var(--ease-out);
 	}
 
 	.label {
@@ -270,6 +310,18 @@
 		border: 1px solid var(--control-border);
 		border-radius: 50%;
 		background: var(--surface);
+		box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+		transition:
+			border-color var(--fast) var(--ease-out),
+			scale var(--fast) var(--ease-out);
+	}
+
+	.create:hover {
+		background: none;
+	}
+
+	.create:hover .glyph {
+		border-color: var(--ink);
 	}
 
 	.badge {
@@ -387,6 +439,10 @@
 		.rail-item {
 			flex: 1;
 			margin: 0;
+		}
+
+		.rail-item::before {
+			display: none;
 		}
 
 		.create {

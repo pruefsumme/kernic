@@ -41,19 +41,7 @@ the item is built.
 - Later, single sign-on against Gitea/Forgejo or another provider with `openid-client`, the
   widely used certified OpenID Connect client for Node. Not verified here.
 
-### 2. UI polish
-
-The layout and flow are settled; make it more pleasant to look at and smoother.
-
-- Visual refinement: spacing rhythm, typography details, icon consistency, hover, active and
-  focus states, empty and loading states, dialog and menu styling.
-- Motion with intent and restraint: panel open and close, menu and dialog entrance, preview
-  page updates (cross-fade instead of a hard swap), save and compile state changes. All of it
-  respecting `prefers-reduced-motion`.
-- Perceived speed: skeletons that match the layout, optimistic file-tree updates.
-- A review of every screen at desktop, tablet and phone widths after the changes.
-
-### 3. Faster preview while typing (parity with typst.app)
+### 2. Faster preview while typing (parity with typst.app)
 
 **Problem.** The preview follows a save by about a second for a long document, because every
 compile starts cold.
@@ -80,7 +68,7 @@ Cold compiles remain for exports and for the first compile.
 - Risk to check when building: detecting "this compile is finished" reliably from watch mode's
   output, and memory held per warm project.
 
-### 4. Editor assistance and source-to-page jumps with Tinymist
+### 3. Editor assistance and source-to-page jumps with Tinymist
 
 Hover documentation, go-to-definition, formatting, rename and diagnostics while typing; clicking
 a place on a page jumps to its source and back.
@@ -94,20 +82,20 @@ a place on a page jumps to its source and back.
   through the language-server protocol, not a shared volume.
 - Not verified: resource use per session, and how Tinymist's preview is best embedded.
 
-### 5. Fonts in the editor
+### 4. Fonts in the editor
 
 The packaged font families are in the worker image now. Still to do: show the server's font
 families in the editor (from `typst fonts`), complete them inside `font: "…"`, and turn the
 compiler's "unknown font family" warning into a message that says how to add the font. An
 optional image variant with Noto CJK (91 MB).
 
-### 6. PDF export options
+### 5. PDF export options
 
 Expose what the compiler already supports: PDF standard (PDF/A variants, PDF/UA), page ranges
 and tagged PDF, in an export dialog. The worker accepts them as a fixed list of allowed values,
 never as free-form arguments.
 
-### 7. Fair compile queue, and readiness for more than one app process
+### 6. Fair compile queue, and readiness for more than one app process
 
 No broker needed for this; PostgreSQL covers it.
 
@@ -119,7 +107,7 @@ No broker needed for this; PostgreSQL covers it.
 - BullMQ with Redis stays an option for many workers; it is established, but it is a second
   service to run and back up, so only when a single worker is not enough.
 
-### 8. Package trust
+### 7. Package trust
 
 **Finding.** Typst Universe's index publishes no checksums (checked: the index has name,
 version, entrypoint, authors, licence and similar fields only), and the official CLI does not
@@ -134,7 +122,7 @@ verify any either. Authenticity rests on HTTPS to the registry.
   of the same version has a different hash (for example after a restore onto a new server).
 - Private packages: administrators upload a package archive into a `local` namespace.
 
-### 9. Checks not yet exercised
+### 8. Checks not yet exercised
 
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
@@ -145,23 +133,23 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 10. Git remotes (Gitea/Forgejo)
+### 9. Git remotes (Gitea/Forgejo)
 
 Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 11. Team access
+### 10. Team access
 
 Team workspaces in the interface, invitations, roles, share links. Builds on the account and
 user management item.
 
-### 12. Real-time collaboration
+### 11. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 13. Operations
+### 12. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -174,6 +162,8 @@ details.
 - Project folders and "move to workspace" on the dashboard.
 - Share dialog (depends on team access).
 - Dark theme, as an explicit choice.
+- Polish, second round: optimistic file-tree updates, a skeleton for the first render of a
+  project, drag and drop to move and upload files, tooltips with shortcuts on toolbar buttons.
 - Render a thumbnail for projects that have none yet (after an upgrade or a restore).
 
 ## Done
@@ -195,3 +185,5 @@ details.
 - Each compile confined with Landlock inside the worker container; worker image on Debian 13
   with a larger set of packaged fonts.
 - Automatic snapshots between checkpoints, on their own Git references, thinned over time.
+- UI polish: motion tokens, dialog and menu entrances, cross-fade between screens and between
+  renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.

@@ -179,13 +179,16 @@
 					{#each projects as project (project.id)}
 						<li>
 							<a href="/projects/{project.id}">
-								<span class="thumb" aria-hidden="true">
+								<span class="thumb" class:blank={!project.thumbnailHash} aria-hidden="true">
 									{#if project.thumbnailHash}
 										<img
 											src="/api/projects/{project.id}/pages/{project.thumbnailHash}"
 											alt=""
 											loading="lazy"
 										/>
+									{:else}
+										<!-- Not rendered yet: a sheet with a few ruled lines instead of an empty box. -->
+										<span class="lines"></span>
 									{/if}
 								</span>
 								<span class="name">{project.name}</span>
@@ -244,9 +247,15 @@
 		color: var(--ink-2);
 	}
 
+	.search {
+		transition:
+			border-color var(--fast) var(--ease-out),
+			box-shadow var(--fast) var(--ease-out);
+	}
+
 	.search:focus-within {
-		outline: 2px solid var(--focus);
-		outline-offset: 1px;
+		border-color: var(--focus);
+		box-shadow: 0 0 0 3px var(--focus-ring);
 	}
 
 	.search input {
@@ -281,8 +290,29 @@
 		cursor: pointer;
 	}
 
-	.start:hover {
-		background: var(--sunken);
+	.start {
+		box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+		transition:
+			background-color var(--fast) var(--ease-out),
+			border-color var(--fast) var(--ease-out),
+			translate var(--fast) var(--ease-out);
+	}
+
+	.start:hover:not(:disabled) {
+		border-color: var(--ink);
+		background: var(--surface);
+	}
+
+	.start:active:not(:disabled) {
+		translate: 0 1px;
+	}
+
+	.start :global(svg) {
+		transition: translate var(--medium) var(--ease-out);
+	}
+
+	.start:hover:not(:disabled) :global(svg) {
+		translate: 0 -1px;
 	}
 
 	.import {
@@ -300,7 +330,7 @@
 		color: var(--accent-ink);
 	}
 
-	.start.primary:hover {
+	.start.primary:hover:not(:disabled) {
 		border-color: var(--accent-hover);
 		background: var(--accent-hover);
 	}
@@ -408,6 +438,18 @@
 		border-radius: 0 var(--radius) var(--radius) 0;
 	}
 
+	.views button,
+	.sort select {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out),
+			border-color var(--fast) var(--ease-out);
+	}
+
+	.views button:hover {
+		color: var(--ink);
+	}
+
 	.views button[aria-pressed='true'] {
 		position: relative;
 		border-color: var(--accent);
@@ -442,9 +484,21 @@
 
 	.thumb {
 		display: block;
-		border: 1px solid var(--rule);
-		background: var(--surface);
+		background: #fff;
+		box-shadow: var(--shadow-sheet);
 		overflow: hidden;
+		transition:
+			box-shadow var(--medium) var(--ease-out),
+			translate var(--medium) var(--ease-out);
+	}
+
+	.lines {
+		display: block;
+		width: 46%;
+		height: 28%;
+		margin: 22% 0 0 14%;
+		background: repeating-linear-gradient(to bottom, var(--rule) 0 2px, transparent 2px 10px);
+		opacity: 0.8;
 	}
 
 	.thumb img {
@@ -469,13 +523,28 @@
 
 	.projects.grid .thumb {
 		aspect-ratio: 210 / 297;
-		margin-bottom: var(--s-2);
-		border-radius: var(--radius);
+		margin-bottom: var(--s-3);
+		border-radius: 2px;
 	}
 
-	.projects.grid a:hover .thumb {
-		border-color: var(--control-border);
-		box-shadow: 0 1px 3px oklch(20% 0.02 250 / 0.12);
+	/* Hovering picks the sheet up a little. */
+	.projects.grid a:hover .thumb,
+	.projects.grid a:focus-visible .thumb {
+		box-shadow: var(--shadow-sheet-raised);
+		translate: 0 -3px;
+	}
+
+	.projects.grid a {
+		border-radius: var(--radius);
+		outline-offset: 6px;
+	}
+
+	.projects.grid .name {
+		transition: color var(--fast) var(--ease-out);
+	}
+
+	.projects.grid a:hover .name {
+		color: var(--accent);
 	}
 
 	/* List: one row per project. */
@@ -489,6 +558,10 @@
 		align-items: center;
 		gap: var(--s-1) var(--s-3);
 		padding: var(--s-2);
+	}
+
+	.projects.list a {
+		transition: background-color var(--fast) var(--ease-out);
 	}
 
 	.projects.list a:hover {

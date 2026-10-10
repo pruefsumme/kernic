@@ -308,6 +308,10 @@
 		border-radius: var(--radius);
 	}
 
+	li {
+		transition: background-color var(--fast) var(--ease-out);
+	}
+
 	li:hover,
 	li:focus-within {
 		background: var(--sunken);
@@ -347,6 +351,10 @@
 		color: var(--ink-3);
 	}
 
+	.chevron {
+		transition: rotate var(--fast) var(--ease-out);
+	}
+
 	.chevron.open {
 		rotate: 90deg;
 	}
@@ -381,6 +389,9 @@
 		color: var(--ink-2);
 		cursor: pointer;
 		opacity: 0;
+		transition:
+			opacity var(--fast) var(--ease-out),
+			background-color var(--fast) var(--ease-out);
 	}
 
 	li:hover :global(.more),

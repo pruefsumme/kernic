@@ -122,6 +122,7 @@
 		text-align: left;
 		text-decoration: none;
 		cursor: pointer;
+		transition: background-color var(--fast) var(--ease-out);
 	}
 
 	.menu :global([role='menuitem']:hover),

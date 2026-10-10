@@ -41,6 +41,20 @@
 		background: var(--ground);
 	}
 
+	/* The panel slides out from the rail it belongs to. */
+	@keyframes slide-in {
+		from {
+			opacity: 0;
+			translate: -10px 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		aside {
+			animation: slide-in var(--medium) var(--ease-out);
+		}
+	}
+
 	header {
 		display: flex;
 		align-items: center;

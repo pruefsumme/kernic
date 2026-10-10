@@ -164,6 +164,14 @@
 		font: inherit;
 		font-size: var(--t-ui);
 		cursor: pointer;
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out),
+			scale var(--fast) var(--ease-out);
+	}
+
+	.toolbar > button:active:not(:disabled) {
+		scale: 0.92;
 	}
 
 	.toolbar :global(.tool.text) {

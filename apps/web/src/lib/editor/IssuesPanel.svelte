@@ -118,6 +118,10 @@
 		cursor: pointer;
 	}
 
+	button {
+		transition: background-color var(--fast) var(--ease-out);
+	}
+
 	button:hover {
 		background: var(--sunken);
 	}

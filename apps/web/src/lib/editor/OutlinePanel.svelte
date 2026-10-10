@@ -87,6 +87,12 @@
 		font-weight: 500;
 	}
 
+	button {
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out);
+	}
+
 	button:hover {
 		background: var(--sunken);
 		color: var(--ink);
