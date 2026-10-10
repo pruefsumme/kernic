@@ -151,8 +151,8 @@
 
 	.address {
 		color: var(--ink-2);
-		font-family: var(--font-mono);
 		font-size: var(--t-meta);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.failed td:nth-child(3) {

@@ -151,7 +151,6 @@
 	}
 
 	.path {
-		font-family: var(--font-mono);
 		overflow-wrap: anywhere;
 	}
 

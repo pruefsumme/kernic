@@ -84,7 +84,7 @@
 			<form method="POST" action="?/entry" use:enhance>
 				{#if data.typstFiles.length === 0}
 					<p class="notice">
-						This project has no <code>.typ</code> files.
+						This project has no <span class="file-name">.typ</span> files.
 						<a href={editorUrl}>Create one in the editor</a>
 						first.
 					</p>

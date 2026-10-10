@@ -147,7 +147,7 @@
 	{#if rows.length === 0}
 		<p class="empty">
 			This project has no files.
-			{#if session.canWrite}Create a file named <code>main.typ</code> to start writing.{/if}
+			{#if session.canWrite}Create a file named <span class="file-name">main.typ</span> to start writing.{/if}
 		</p>
 	{:else}
 		<ul class="tree">

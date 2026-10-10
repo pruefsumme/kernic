@@ -32,7 +32,7 @@
 	<div class="field">
 		<label for="setupToken">Setup token</label>
 		<input
-			class="input mono"
+			class="input token"
 			id="setupToken"
 			name="setupToken"
 			autocomplete="off"
@@ -110,8 +110,9 @@
 </form>
 
 <style>
-	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--t-ui);
+	/* A slashed zero and a little air keep similar characters apart. */
+	.token {
+		font-feature-settings: 'zero';
+		letter-spacing: 0.02em;
 	}
 </style>

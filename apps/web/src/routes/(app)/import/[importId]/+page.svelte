@@ -200,7 +200,7 @@
 							<ul class="list">
 								{#each report.missing as reference, index (index)}
 									<li>
-										<code>{reference.target}</code>
+										<span class="file-name">{reference.target}</span>
 										<span class="path">referenced from {reference.referencedFrom}</span>
 									</li>
 								{/each}
@@ -217,7 +217,7 @@
 							<ul class="list">
 								{#each report.skipped as entry (entry.path)}
 									<li>
-										<code>{entry.path}</code>
+										<span class="file-name">{entry.path}</span>
 										<span class="path">{entry.reason}</span>
 									</li>
 								{/each}

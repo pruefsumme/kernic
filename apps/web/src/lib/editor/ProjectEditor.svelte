@@ -425,7 +425,6 @@
 	.file-path {
 		overflow: hidden;
 		color: var(--ink-2);
-		font-family: var(--font-mono);
 		font-size: var(--t-meta);
 		text-overflow: ellipsis;
 		white-space: nowrap;

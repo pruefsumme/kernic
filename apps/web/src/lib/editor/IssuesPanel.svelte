@@ -142,8 +142,8 @@
 
 	.where {
 		color: var(--ink-2);
-		font-family: var(--font-mono);
 		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
 		overflow-wrap: anywhere;
 	}
 </style>

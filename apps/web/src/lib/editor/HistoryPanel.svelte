@@ -308,7 +308,6 @@
 
 	.file {
 		overflow: hidden;
-		font-family: var(--font-mono);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}

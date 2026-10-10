@@ -191,7 +191,6 @@
 	}
 
 	.copy .input {
-		font-family: var(--font-mono);
 		font-size: var(--t-meta);
 	}
 
