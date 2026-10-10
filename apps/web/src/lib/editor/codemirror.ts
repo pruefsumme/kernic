@@ -90,9 +90,15 @@ const theme = EditorView.theme({
 		color: 'var(--ink-3)',
 		border: 'none'
 	},
-	'.cm-lineNumbers .cm-gutterElement': { padding: '0 0.5rem 0 0.75rem', minWidth: '2.5rem' },
+	// Line numbers step back behind the text; the current line's number stays dark.
+	'.cm-lineNumbers .cm-gutterElement': {
+		padding: '0 0.5rem 0 0.75rem',
+		minWidth: '2.5rem',
+		color: 'oklch(62% 0.012 250)'
+	},
 	'.cm-activeLine': { backgroundColor: 'oklch(97% 0.006 255)' },
-	'.cm-activeLineGutter': { backgroundColor: 'oklch(97% 0.006 255)', color: 'var(--ink)' },
+	'.cm-lineNumbers .cm-activeLineGutter': { color: 'var(--ink)' },
+	'.cm-activeLineGutter': { backgroundColor: 'oklch(97% 0.006 255)' },
 	'&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground':
 		{ backgroundColor: 'var(--accent-soft)' },
 	'.cm-cursor': { borderLeftColor: 'var(--ink)', borderLeftWidth: '1.5px' },

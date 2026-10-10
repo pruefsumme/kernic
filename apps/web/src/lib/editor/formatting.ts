@@ -86,3 +86,13 @@ export function insertLink(view: EditorView): void {
 	});
 	view.focus();
 }
+
+/** Inserts `#image("…")` for each path at the cursor, one per line. */
+export function insertImages(view: EditorView, paths: string[]): void {
+	const quoted = (path: string) => path.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+	view.dispatch(
+		view.state.replaceSelection(paths.map((path) => `#image("${quoted(path)}")`).join('\n')),
+		{ scrollIntoView: true, userEvent: 'input.paste' }
+	);
+	view.focus();
+}

@@ -3,7 +3,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import Menu from '#lib/components/Menu.svelte';
 	import PromptDialog from '#lib/components/PromptDialog.svelte';
-	import type { TreeEntry, UploadResult } from './api.ts';
+	import type { TreeEntry } from './api.ts';
 	import type { EditorSession } from './session.svelte.ts';
 	import SidePanel from './SidePanel.svelte';
 
@@ -22,8 +22,6 @@
 	const collapsed = new SvelteSet<string>();
 	let uploadInput: HTMLInputElement;
 	let uploadDirectory = '';
-	let uploadResults = $state<UploadResult[] | null>(null);
-	let uploadError = $state<string | null>(null);
 
 	type Prompt =
 		| { kind: 'new-file'; directory: string }
@@ -72,14 +70,7 @@
 	async function upload() {
 		const files = [...(uploadInput.files ?? [])];
 		uploadInput.value = '';
-		if (files.length === 0) return;
-		uploadError = null;
-		uploadResults = null;
-		try {
-			uploadResults = await session.upload(uploadDirectory, files);
-		} catch (error) {
-			uploadError = error instanceof Error ? error.message : 'The upload failed.';
-		}
+		await session.upload(uploadDirectory, files);
 	}
 
 	const inDirectory = (directory: string, name: string) =>
@@ -101,8 +92,10 @@
 		}
 	}
 
-	const stored = $derived(uploadResults?.filter((result) => result.stored) ?? []);
-	const skipped = $derived(uploadResults?.filter((result) => !result.stored) ?? []);
+	const report = $derived(session.uploadReport);
+	const results = $derived(report && 'results' in report ? report.results : []);
+	const stored = $derived(results.filter((result) => result.stored));
+	const skipped = $derived(results.filter((result) => !result.stored));
 </script>
 
 <SidePanel title="Files" {onclose}>
@@ -128,9 +121,18 @@
 		</div>
 	{/if}
 
-	{#if uploadError}
-		<p class="report error" role="alert">{uploadError}</p>
-	{:else if uploadResults}
+	{#if report && 'error' in report}
+		<div class="report error" role="alert">
+			<p>{report.error}</p>
+			<button
+				class="button quiet small"
+				type="button"
+				onclick={() => (session.uploadReport = null)}
+			>
+				Dismiss
+			</button>
+		</div>
+	{:else if report}
 		<div class="report" class:error={skipped.length > 0} role="status">
 			{#if stored.length > 0}
 				<p>{stored.length === 1 ? '1 file uploaded.' : `${stored.length} files uploaded.`}</p>
@@ -138,7 +140,11 @@
 			{#each skipped as result (result.name)}
 				<p><strong>{result.name}</strong> was not uploaded. {result.message}</p>
 			{/each}
-			<button class="button quiet small" type="button" onclick={() => (uploadResults = null)}>
+			<button
+				class="button quiet small"
+				type="button"
+				onclick={() => (session.uploadReport = null)}
+			>
 				Dismiss
 			</button>
 		</div>

@@ -296,6 +296,33 @@ pre {
 	color: var(--ink-3);
 }
 
+/* Dropdowns look like the other fields, with a small caret drawn in CSS. */
+select.input,
+select.select {
+	appearance: none;
+	padding-right: 2rem;
+	background-image:
+		linear-gradient(45deg, transparent 50%, var(--ink-2) 50%),
+		linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+	background-position:
+		calc(100% - 1rem) 50%,
+		calc(100% - 1rem + 5px) 50%;
+	background-size: 5px 5px;
+	background-repeat: no-repeat;
+	cursor: pointer;
+}
+
+select.input:hover:not(:disabled),
+select.select:hover:not(:disabled) {
+	border-color: var(--ink-2);
+}
+
+select.input:disabled {
+	background-color: var(--ground);
+	color: var(--ink-2);
+	cursor: default;
+}
+
 .input[aria-invalid='true'] {
 	border-color: var(--error);
 }

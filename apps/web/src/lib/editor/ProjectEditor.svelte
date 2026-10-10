@@ -11,6 +11,7 @@
 	import { createProjectApi, type Diagnostic, type TreeEntry } from './api.ts';
 	import { revealPosition, type Heading } from './codemirror.ts';
 	import FilesPanel from './FilesPanel.svelte';
+	import { insertImages } from './formatting.ts';
 	import FormatToolbar from './FormatToolbar.svelte';
 	import HistoryPanel from './HistoryPanel.svelte';
 	import IssuesPanel from './IssuesPanel.svelte';
@@ -75,7 +76,20 @@
 		if (initial) void open(initial);
 		session.requestCompile();
 
-		return () => session.dispose();
+		// Files may be dropped anywhere on this screen, the file list included.
+		// Listening on the window, before the editor does, also keeps the browser
+		// from opening a dropped file in place of the app.
+		const dragEvents = { dragenter: dragEnter, dragleave: dragLeave, dragover: dragOver, drop };
+		for (const [type, listener] of Object.entries(dragEvents)) {
+			window.addEventListener(type, listener as EventListener, true);
+		}
+
+		return () => {
+			for (const [type, listener] of Object.entries(dragEvents)) {
+				window.removeEventListener(type, listener as EventListener, true);
+			}
+			session.dispose();
+		};
 	});
 
 	$effect(() => {
@@ -120,6 +134,91 @@
 		const url = await session.exportPdf();
 		if (url) location.assign(url);
 		else if (session.errorCount > 0) openPanel = 'issues';
+	}
+
+	const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
+	/** Nested elements under the pointer while files are dragged over the editor. */
+	let dragDepth = $state(0);
+
+	const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
+	/** Whether images can be placed into the open file: a Typst source that may be edited. */
+	const acceptsImages = () => canWrite && file?.kind === 'text' && /\.typ$/i.test(file.path);
+
+	function dragEnter(event: DragEvent) {
+		if (carriesFiles(event)) dragDepth++;
+	}
+
+	function dragLeave(event: DragEvent) {
+		if (carriesFiles(event)) dragDepth = Math.max(0, dragDepth - 1);
+	}
+
+	function dragOver(event: DragEvent) {
+		if (!carriesFiles(event)) return;
+		// Without this the browser would open the dropped file in place of the app.
+		event.preventDefault();
+		event.dataTransfer!.dropEffect = canWrite ? 'copy' : 'none';
+	}
+
+	function drop(event: DragEvent) {
+		if (!carriesFiles(event)) return;
+		event.preventDefault();
+		// The editor would otherwise insert the content of dropped text files.
+		event.stopPropagation();
+		dragDepth = 0;
+		if (!canWrite) return;
+
+		const files = [...event.dataTransfer!.items]
+			.filter((item) => item.kind === 'file' && !item.webkitGetAsEntry?.()?.isDirectory)
+			.map((item) => item.getAsFile())
+			.filter((dropped): dropped is File => dropped !== null);
+		const onSource = event.target instanceof Element && event.target.closest('.source') !== null;
+		void addFiles(files, onSource);
+	}
+
+	function paste(event: ClipboardEvent) {
+		const clipboard = event.clipboardData;
+		// Text copied from an office program often comes with a picture of itself; text wins.
+		if (!clipboard || clipboard.types.includes('text/plain') || !acceptsImages()) return;
+		const images = [...clipboard.files].filter((pasted) => pasted.type.startsWith('image/'));
+		if (images.length === 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+
+		// A screenshot arrives as "image.png" every time; give each one its own name.
+		const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+		const named = images.map((image, index) =>
+			image.name === 'image.png'
+				? new File([image], `pasted-${stamp}${index > 0 ? `-${index + 1}` : ''}.png`, {
+						type: image.type
+					})
+				: image
+		);
+		void addFiles(named, true);
+	}
+
+	/**
+	 * Uploads files that were dropped or pasted. Images placed on a Typst source
+	 * go beside that file and are inserted at the cursor; everything else goes to
+	 * the top folder of the project.
+	 */
+	async function addFiles(files: File[], onSource: boolean) {
+		if (files.length === 0) return;
+		const target = file;
+		const place =
+			onSource && acceptsImages() && files.every((added) => IMAGE_FILE.test(added.name));
+		const directory = place && target ? target.path.split('/').slice(0, -1).join('/') : '';
+
+		const stored = await session.upload(directory, files);
+		if (place && stored.length > 0 && view && session.file?.path === target?.path) {
+			insertImages(
+				view,
+				stored.map((result) => result.name)
+			);
+		}
+		// Show where the files went, and any that were refused, unless all of them
+		// are now visible in the source.
+		if (place && stored.length === files.length) session.uploadReport = null;
+		else openPanel = 'files';
 	}
 
 	function resize(event: PointerEvent) {
@@ -277,7 +376,31 @@
 		{/if}
 	{/snippet}
 
-	<div class="frame">
+	<div class="frame" onpastecapture={paste}>
+		{#if dragDepth > 0}
+			<div class="drop" class:refused={!canWrite} aria-hidden="true">
+				<div class="drop-card">
+					<Icon name="upload" size={22} />
+					{#if canWrite}
+						<strong>Drop to add to “{project.name}”</strong>
+						<span>
+							{acceptsImages()
+								? 'Images dropped on the source are also inserted at the cursor.'
+								: 'The files go to the top folder of the project.'}
+						</span>
+					{:else}
+						<strong>This project is read-only</strong>
+						<span>You cannot add files to it.</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+		{#if session.uploading > 0}
+			<p class="uploading" role="status">
+				Uploading {session.uploading === 1 ? '1 file' : `${session.uploading} files`}…
+			</p>
+		{/if}
+
 		{#if session.exportError}
 			<div class="banner" role="alert">
 				<span>{session.exportError}</span>
@@ -459,6 +582,77 @@
 		flex-direction: column;
 		height: 100%;
 		min-height: 0;
+	}
+
+	.drop {
+		position: absolute;
+		z-index: 5;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: var(--s-4);
+		border: 2px dashed var(--accent);
+		background: oklch(96% 0.02 264 / 0.7);
+		pointer-events: none;
+	}
+
+	.drop.refused {
+		border-color: var(--control-border);
+		background: oklch(97% 0.004 255 / 0.9);
+	}
+
+	.drop-card {
+		display: grid;
+		justify-items: center;
+		gap: var(--s-1);
+		max-width: 26rem;
+		padding: var(--s-5) var(--s-6);
+		border-radius: var(--radius-float);
+		background: var(--surface);
+		box-shadow: var(--shadow-float);
+		color: var(--accent);
+		text-align: center;
+	}
+
+	.drop.refused .drop-card {
+		color: var(--ink-2);
+	}
+
+	.drop-card strong {
+		color: var(--ink);
+		font-size: var(--t-heading);
+	}
+
+	.drop-card span {
+		color: var(--ink-2);
+		font-size: var(--t-ui);
+	}
+
+	.uploading {
+		position: absolute;
+		z-index: 6;
+		bottom: var(--s-4);
+		left: 50%;
+		margin: 0;
+		padding: var(--s-2) var(--s-4);
+		border-radius: 2rem;
+		background: var(--ink);
+		box-shadow: var(--shadow-float);
+		color: var(--surface);
+		font-size: var(--t-ui);
+		translate: -50% 0;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.drop {
+			animation: drop-in var(--fast) var(--ease-out);
+		}
+
+		@keyframes drop-in {
+			from {
+				opacity: 0;
+			}
+		}
 	}
 
 	.workspace {

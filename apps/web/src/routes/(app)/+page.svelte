@@ -135,7 +135,7 @@
 				<div class="controls">
 					<label class="sort">
 						<span>Sort by</span>
-						<select bind:value={sort} onchange={remember}>
+						<select class="select" bind:value={sort} onchange={remember}>
 							<option value="edited">Last edited</option>
 							<option value="name">Name</option>
 						</select>
@@ -400,10 +400,13 @@
 
 	.sort select {
 		min-height: 1.75rem;
-		padding: 0 var(--s-1);
+		padding: 0 1.75rem 0 var(--s-2);
+		background-position:
+			calc(100% - 0.75rem) 50%,
+			calc(100% - 0.75rem + 5px) 50%;
 		border: 1px solid var(--control-border);
 		border-radius: var(--radius);
-		background: var(--surface);
+		background-color: var(--surface);
 		color: var(--ink);
 		font: inherit;
 	}

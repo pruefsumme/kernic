@@ -81,6 +81,10 @@ export class EditorSession {
 
 	exporting = $state(false);
 	exportError = $state<string | null>(null);
+	/** Number of files being uploaded right now. */
+	uploading = $state(0);
+	/** Outcome of the latest upload, until dismissed: what was stored and what was not. */
+	uploadReport = $state<{ results: UploadResult[] } | { error: string } | null>(null);
 
 	/** True when the pages on screen do not reflect the latest saved source. */
 	readonly previewIsStale = $derived(
@@ -412,10 +416,26 @@ export class EditorSession {
 		this.requestCompile();
 	}
 
+	/**
+	 * Uploads files into a folder. Existing files are never replaced; the report
+	 * says for each file whether it was stored. Returns the stored ones.
+	 */
 	async upload(directory: string, files: File[]): Promise<UploadResult[]> {
-		const { results } = await this.api.upload(directory, files);
-		await this.refreshTree();
-		if (results.some((result) => result.stored)) this.requestCompile();
-		return results;
+		if (files.length === 0) return [];
+		this.uploadReport = null;
+		this.uploading += files.length;
+		try {
+			const { results } = await this.api.upload(directory, files);
+			this.uploadReport = { results };
+			await this.refreshTree();
+			const stored = results.filter((result) => result.stored);
+			if (stored.length > 0) this.requestCompile();
+			return stored;
+		} catch (error) {
+			this.uploadReport = { error: messageOf(error) || 'The upload failed.' };
+			return [];
+		} finally {
+			this.uploading -= files.length;
+		}
 	}
 }

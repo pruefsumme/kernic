@@ -169,6 +169,77 @@ test('uploads are stored, shown, and never replace an existing file', async ({ p
 	await expect(files.getByRole('status')).toContainText('1 file uploaded.');
 });
 
+test('files dropped on the editor are added, and images land in the source', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Drop zone');
+	const files = panel(page, 'Files');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	/** Drops or pastes a small file the way a browser reports it. */
+	const deliver = (how: 'drop' | 'paste', selector: string, name: string, type: string) =>
+		page.evaluate(
+			({ how, selector, name, type }) => {
+				const png = Uint8Array.from(
+					atob(
+						'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+					),
+					(character) => character.charCodeAt(0)
+				);
+				const transfer = new DataTransfer();
+				transfer.items.add(new File([type === 'image/png' ? png : 'plain text'], name, { type }));
+				const target = document.querySelector(selector)!;
+				const options = { bubbles: true, cancelable: true };
+				if (how === 'paste') {
+					target.dispatchEvent(
+						new ClipboardEvent('paste', { ...options, clipboardData: transfer })
+					);
+					return;
+				}
+				for (const kind of ['dragenter', 'dragover', 'drop']) {
+					target.dispatchEvent(new DragEvent(kind, { ...options, dataTransfer: transfer }));
+				}
+			},
+			{ how, selector, name, type }
+		);
+
+	// While files hover over the editor, it says what dropping them will do.
+	await page.evaluate(() => {
+		const transfer = new DataTransfer();
+		transfer.items.add(new File(['x'], 'hover.txt'));
+		document
+			.querySelector('.cm-content')!
+			.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer: transfer }));
+	});
+	await expect(page.getByText('Drop to add to “Drop zone”')).toBeVisible();
+
+	// An image dropped on the source is stored beside the file and inserted.
+	await deliver('drop', '.cm-content', 'figure.png', 'image/png');
+	await expect(page.getByText('Drop to add to “Drop zone”')).toHaveCount(0);
+	await expect.poll(() => editorText(page)).toContain('#image("figure.png")');
+	await expect(files.getByRole('button', { name: 'figure.png', exact: true })).toBeVisible();
+	await expect(saveState(page)).toContainText('Saved');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	// A pasted screenshot gets a name of its own.
+	await deliver('paste', '.cm-content', 'image.png', 'image/png');
+	await expect.poll(() => editorText(page)).toMatch(/#image\("pasted-\d{8}-\d{6}\.png"\)/);
+
+	// Other files, and anything dropped on the preview, go to the top folder and
+	// are not written into the source.
+	await deliver('drop', '.preview', 'data.csv', 'text/csv');
+	await expect(files.getByRole('status')).toContainText('1 file uploaded.');
+	await expect(files.getByRole('button', { name: 'data.csv', exact: true })).toBeVisible();
+	expect(await editorText(page)).not.toContain('plain text');
+
+	// The file list takes drops as well.
+	await deliver('drop', '[aria-label="Files"] .tree', 'listed.csv', 'text/csv');
+	await expect(files.getByRole('button', { name: 'listed.csv', exact: true })).toBeVisible();
+
+	// Dropping a file again never replaces the one that is there.
+	await deliver('drop', '.cm-content', 'figure.png', 'image/png');
+	await expect(files.getByRole('status')).toContainText('was not uploaded');
+	expect((await editorText(page)).match(/figure\.png/g)).toHaveLength(1);
+});
+
 test('export produces a PDF and a ZIP of the project', async ({ page }) => {
 	await createProject(page, 'Article', 'Export me');
 	await expect(previewStatus(page)).toContainText('Up to date');
