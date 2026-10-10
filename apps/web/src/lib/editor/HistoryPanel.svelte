@@ -3,27 +3,51 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import PromptDialog from '#lib/components/PromptDialog.svelte';
 	import { formatExact, formatWhen } from '#lib/format.ts';
-	import type { Change, Checkpoint } from './api.ts';
+	import type { Change, Checkpoint, Snapshot } from './api.ts';
 	import DiffDialog from './DiffDialog.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 	import SidePanel from './SidePanel.svelte';
 
 	let { session, onclose }: { session: EditorSession; onclose: () => void } = $props();
 
+	/** Something that can be compared and restored: a checkpoint or an automatic snapshot. */
+	interface Version {
+		id: string;
+		kind: 'checkpoint' | 'snapshot';
+		/** How it is named in dialogs. */
+		label: string;
+	}
+
+	const SNAPSHOTS_SHOWN = 6;
+
 	let checkpoints = $state<Checkpoint[] | null>(null);
+	let snapshots = $state<Snapshot[]>([]);
+	let showAllSnapshots = $state(false);
 	let changes = $state<Change[]>([]);
 	let error = $state<string | null>(null);
 
 	let creating = $state(false);
-	let restoring = $state<Checkpoint | null>(null);
+	let restoring = $state<Version | null>(null);
 	let restoreOpen = $state(false);
 	let diffOpen = $state(false);
-	let diffTarget = $state<Checkpoint | 'working'>('working');
+	let diffTarget = $state<Version | 'working'>('working');
+
+	const ofCheckpoint = (checkpoint: Checkpoint): Version => ({
+		id: checkpoint.id,
+		kind: 'checkpoint',
+		label: `“${checkpoint.message}”`
+	});
+	const ofSnapshot = (snapshot: Snapshot): Version => ({
+		id: snapshot.id,
+		kind: 'snapshot',
+		label: `the automatic snapshot of ${formatExact(snapshot.createdAt)}`
+	});
 
 	async function refresh() {
 		try {
 			const history = await session.api.history();
 			checkpoints = history.checkpoints;
+			snapshots = history.snapshots;
 			changes = history.changes;
 			error = null;
 		} catch (cause) {
@@ -51,13 +75,16 @@
 		await refresh();
 	}
 
-	function showDiff(target: Checkpoint | 'working') {
+	function showDiff(target: Version | 'working') {
 		diffTarget = target;
 		diffOpen = true;
 	}
 
 	const kindLabel = { added: 'added', modified: 'changed', deleted: 'deleted', renamed: 'renamed' };
 	const shownChanges = $derived(changes.slice(0, 6));
+	const shownSnapshots = $derived(
+		showAllSnapshots ? snapshots : snapshots.slice(0, SNAPSHOTS_SHOWN)
+	);
 </script>
 
 <SidePanel title="History" {onclose}>
@@ -134,7 +161,9 @@
 							triggerClass="more"
 						>
 							{#snippet trigger()}<Icon name="more" size={16} />{/snippet}
-							<button role="menuitem" onclick={() => showDiff(checkpoint)}>View changes</button>
+							<button role="menuitem" onclick={() => showDiff(ofCheckpoint(checkpoint))}>
+								View changes
+							</button>
 							<a role="menuitem" href={session.api.checkpointArchiveUrl(checkpoint.id)} download>
 								Download as ZIP
 							</a>
@@ -142,7 +171,7 @@
 								<button
 									role="menuitem"
 									onclick={() => {
-										restoring = checkpoint;
+										restoring = ofCheckpoint(checkpoint);
 										restoreOpen = true;
 									}}
 								>
@@ -153,6 +182,65 @@
 					</li>
 				{/each}
 			</ol>
+		{/if}
+
+		{#if snapshots.length > 0}
+			<h3>Automatic snapshots</h3>
+			<p class="block note about">
+				Taken while you work, at most every 10 minutes, and before a file is deleted. Kept for 30
+				days.
+			</p>
+			<ol class="checkpoints">
+				{#each shownSnapshots as snapshot (snapshot.id)}
+					<li>
+						<div class="entry">
+							<time
+								class="message"
+								datetime={snapshot.createdAt.toISOString()}
+								title={formatExact(snapshot.createdAt)}
+							>
+								{formatExact(snapshot.createdAt)}
+							</time>
+							<span class="meta">{formatWhen(snapshot.createdAt)}</span>
+						</div>
+						<Menu
+							label="Actions for the snapshot of {formatExact(snapshot.createdAt)}"
+							align="end"
+							triggerClass="more"
+						>
+							{#snippet trigger()}<Icon name="more" size={16} />{/snippet}
+							<button role="menuitem" onclick={() => showDiff(ofSnapshot(snapshot))}>
+								Changes since then
+							</button>
+							<a role="menuitem" href={session.api.checkpointArchiveUrl(snapshot.id)} download>
+								Download as ZIP
+							</a>
+							{#if session.canWrite}
+								<button
+									role="menuitem"
+									onclick={() => {
+										restoring = ofSnapshot(snapshot);
+										restoreOpen = true;
+									}}
+								>
+									Restore this version
+								</button>
+							{/if}
+						</Menu>
+					</li>
+				{/each}
+			</ol>
+			{#if snapshots.length > SNAPSHOTS_SHOWN}
+				<div class="block">
+					<button
+						class="button quiet small"
+						type="button"
+						onclick={() => (showAllSnapshots = !showAllSnapshots)}
+					>
+						{showAllSnapshots ? 'Show fewer' : `Show all ${snapshots.length}`}
+					</button>
+				</div>
+			{/if}
 		{/if}
 	{/if}
 </SidePanel>
@@ -170,7 +258,7 @@
 <PromptDialog
 	bind:open={restoreOpen}
 	title="Restore this version?"
-	description={`All files go back to “${restoring?.message ?? ''}”. Your current files are recorded as a checkpoint first, so you can return to them.`}
+	description={`All files go back to ${restoring?.label ?? ''}. Your current files are recorded as a checkpoint first, so you can return to them.`}
 	confirmLabel="Restore"
 	onsubmit={restore}
 />
@@ -179,7 +267,9 @@
 	bind:open={diffOpen}
 	title={diffTarget === 'working'
 		? 'Changes since the last checkpoint'
-		: `Changes in “${diffTarget.message}”`}
+		: diffTarget.kind === 'checkpoint'
+			? `Changes in ${diffTarget.label}`
+			: `Changes since ${diffTarget.label}`}
 	load={() => session.api.diff(diffTarget === 'working' ? 'working' : diffTarget.id)}
 />
 
@@ -234,6 +324,11 @@
 		flex-wrap: wrap;
 		gap: var(--s-2);
 		margin-top: var(--s-1);
+	}
+
+	.about {
+		padding-bottom: var(--s-1);
+		font-size: var(--t-meta);
 	}
 
 	h3 {

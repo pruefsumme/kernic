@@ -42,6 +42,11 @@ export interface Checkpoint {
 	createdAt: Date;
 }
 
+export interface Snapshot {
+	id: string;
+	createdAt: Date;
+}
+
 export interface Change {
 	path: string;
 	kind: 'added' | 'modified' | 'deleted' | 'renamed';
@@ -206,17 +211,24 @@ export function createProjectApi(projectId: string) {
 
 		checkpointArchiveUrl: (checkpointId: string) => `${base}/history/${checkpointId}/archive`,
 
-		async history(): Promise<{ checkpoints: Checkpoint[]; changes: Change[] }> {
+		async history(): Promise<{
+			checkpoints: Checkpoint[];
+			snapshots: Snapshot[];
+			changes: Change[];
+		}> {
 			const body = (await (await request(`${base}/history`)).json()) as {
 				checkpoints: (Omit<Checkpoint, 'createdAt'> & { createdAt: string })[];
+				snapshots: { id: string; createdAt: string }[];
 				changes: Change[];
 			};
+			const withDate = <T extends { createdAt: string }>(item: T) => ({
+				...item,
+				createdAt: new Date(item.createdAt)
+			});
 			return {
 				changes: body.changes,
-				checkpoints: body.checkpoints.map((checkpoint) => ({
-					...checkpoint,
-					createdAt: new Date(checkpoint.createdAt)
-				}))
+				checkpoints: body.checkpoints.map(withDate),
+				snapshots: body.snapshots.map(withDate)
 			};
 		},
 
@@ -224,7 +236,7 @@ export function createProjectApi(projectId: string) {
 			await request(`${base}/history`, json({ message }));
 		},
 
-		/** Changes of a checkpoint, or of the current files with `working`. */
+		/** Changes of a checkpoint, since a snapshot, or of the current files with `working`. */
 		async diff(checkpointId: string | 'working'): Promise<FileDiff[]> {
 			return (
 				(await (await request(`${base}/history/${checkpointId}/diff`)).json()) as {

@@ -164,6 +164,100 @@ describe('restore', () => {
 	});
 });
 
+describe('automatic snapshots', () => {
+	const at = (iso: string) => new Date(iso);
+
+	it('records the files without touching checkpoints, the branch or the files', async () => {
+		await write('main.typ', 'checkpointed\n');
+		await history.createCheckpoint('First', author);
+		await write('main.typ', 'written later\n');
+
+		const snapshot = await history.takeSnapshot(at('2026-10-11T10:00:00Z'));
+		expect(snapshot?.createdAt.toISOString()).toBe('2026-10-11T10:00:00.000Z');
+		expect(await history.snapshots()).toEqual([snapshot]);
+
+		// The checkpoint history and the pending changes are exactly as before.
+		expect((await history.list()).map((checkpoint) => checkpoint.message)).toEqual(['First']);
+		expect(await history.changes()).toEqual([{ path: 'main.typ', kind: 'modified' }]);
+		expect(await read('main.typ')).toBe('written later\n');
+	});
+
+	it('does not record a state that is already recorded', async () => {
+		await write('main.typ', 'one\n');
+		await history.createCheckpoint('First', author);
+		// Same as the checkpoint.
+		expect(await history.takeSnapshot(at('2026-10-11T10:00:00Z'))).toBeNull();
+
+		await write('main.typ', 'two\n');
+		expect(await history.takeSnapshot(at('2026-10-11T10:10:00Z'))).not.toBeNull();
+		// Same as the newest snapshot.
+		expect(await history.takeSnapshot(at('2026-10-11T10:20:00Z'))).toBeNull();
+		expect((await history.snapshots()).length).toBe(1);
+	});
+
+	it('restores a snapshot, shows what it would undo, and keeps everything else', async () => {
+		await write('main.typ', 'good text\n');
+		await write('figure.txt', 'data\n');
+		await history.createCheckpoint('First', author);
+		await write('main.typ', 'good text\nan hour of writing\n');
+		const snapshot = (await history.takeSnapshot(at('2026-10-11T10:00:00Z')))!;
+
+		// A bad edit, saved over the good work, and a deleted file.
+		await write('main.typ', 'oops\n');
+		await rm(path.join(tree, 'figure.txt'));
+
+		const undo = await history.diff(snapshot.id);
+		expect(undo.find((file) => file.path === 'main.typ')?.lines).toContainEqual({
+			kind: 'removed',
+			text: 'an hour of writing'
+		});
+		expect(undo.find((file) => file.path === 'figure.txt')?.kind).toBe('deleted');
+
+		await history.restore(snapshot.id, author);
+		expect(await read('main.typ')).toBe('good text\nan hour of writing\n');
+		expect(await read('figure.txt')).toBe('data\n');
+		expect((await history.list()).map((checkpoint) => checkpoint.message)).toEqual([
+			'Restored “Automatic snapshot of 2026-10-11 10:00 UTC”',
+			'Before restoring an automatic snapshot',
+			'First'
+		]);
+	});
+
+	it('keeps a day of snapshots, then one per day for a month', async () => {
+		await write('main.typ', 'start\n');
+		await history.createCheckpoint('First', author);
+		const times = [
+			'2026-08-01T09:00:00Z', // older than a month: dropped
+			'2026-10-01T09:00:00Z', // an earlier snapshot of its day: dropped
+			'2026-10-01T17:00:00Z', // last of its day: kept
+			'2026-10-09T08:00:00Z', // the only one of its day: kept
+			'2026-10-10T20:00:00Z', // within the last 24 hours: kept
+			'2026-10-11T09:00:00Z', // within the last 24 hours: kept
+			'2026-10-11T09:10:00Z' // within the last 24 hours: kept
+		];
+		for (const [index, time] of times.entries()) {
+			await write('main.typ', `version ${index}\n`);
+			await history.takeSnapshot(at(time));
+		}
+
+		expect(await history.thinSnapshots(at('2026-10-11T12:00:00Z'))).toBe(2);
+		expect((await history.snapshots()).map((snapshot) => snapshot.createdAt.toISOString())).toEqual(
+			[
+				'2026-10-11T09:10:00.000Z',
+				'2026-10-11T09:00:00.000Z',
+				'2026-10-10T20:00:00.000Z',
+				'2026-10-09T08:00:00.000Z',
+				'2026-10-01T17:00:00.000Z'
+			]
+		);
+		// Checkpoints and the remaining snapshots are intact after the clean-up.
+		expect((await history.list()).length).toBe(1);
+		const oldest = (await history.snapshots()).at(-1)!;
+		await history.restore(oldest.id, author);
+		expect(await read('main.typ')).toBe('version 2\n');
+	});
+});
+
 describe('untrusted project content', () => {
 	it('does not run filters, hooks or options smuggled in through files', async () => {
 		const marker = path.join(projectDirectory, 'executed');

@@ -67,7 +67,8 @@ Working:
 - Live preview through the sandboxed worker, with compiler errors and warnings linked to the source
 - PDF export and ZIP download of all project files
 - Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
-  restore of any earlier version without losing the current one, ZIP download of a version
+  restore of any earlier version without losing the current one, ZIP download of a version;
+  automatic snapshots in between
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
 

@@ -101,6 +101,9 @@ signed-in user's files, and everything fetched from outside (packages).
   when possible. **Tested** for navigation and offline.
 - Version history: checkpoints are Git commits; restore first records the current files and
   only ever adds to history. **Tested**, including recovery of text that was never checkpointed.
+- Automatic snapshots between checkpoints: taken before a round of edits, at most every ten
+  minutes, and before every deletion; all kept for a day, then one per day for 30 days.
+  **Tested**: a file deleted together with text that was never checkpointed is restored.
 - Concurrency: saves, moves, deletes, uploads, checkpoints and restores of one project are
   serialized. **Tested** with about 2,200 saves, 190 compiles and 350 restores running at once:
   no server errors, no crash.
@@ -134,25 +137,27 @@ signed-in user's files, and everything fetched from outside (packages).
 11. In Docker, all compiles ran as one user with access to the worker's whole file cache, so a
     compiler bug that escaped Typst's own confinement could have read other projects' files.
     Each compile is now restricted with Landlock to its own job.
+12. Nothing was recorded between explicit checkpoints. The files are now recorded automatically
+    before a round of edits (at most every ten minutes) and before every deletion, apart from
+    the checkpoint history; a snapshot can be compared, restored and downloaded like a
+    checkpoint.
 
 ## Open
 
 Ordered by how much they matter for someone writing a thesis here. The researched solution for
 each is in the [backlog](backlog.md).
 
-1. **Nothing is recorded between checkpoints.** A bad edit followed by more saves can only be
-   undone back to the last explicit checkpoint. Automatic snapshots are planned.
-2. **No account self-service.** There is no page to change one's password or see and revoke
+1. **No account self-service.** There is no page to change one's password or see and revoke
    sessions, and no interface to create further accounts.
-3. **Package authenticity rests on HTTPS and first download.** The registry publishes no
+2. **Package authenticity rests on HTTPS and first download.** The registry publishes no
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
-4. **Single process.** Rate limits and the per-project lock live in memory; running several app
+3. **Single process.** Rate limits and the per-project lock live in memory; running several app
    instances is not supported.
-5. **No fairness in the compile queue.** One account can queue compiles for many projects.
-6. **No audit log** of sign-ins, access changes or deletions.
-7. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
+4. **No fairness in the compile queue.** One account can queue compiles for many projects.
+5. **No audit log** of sign-ins, access changes or deletions.
+6. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
    between two released versions, power loss during a save.
-8. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
+7. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.
 
@@ -172,4 +177,4 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Editor assistance | Syntax highlighting and completion of built-in functions. No hover documentation, go-to-definition or formatting yet. |
 | Collaboration, comments, sharing links | Not available. |
 | PDF options (PDF/A, tagged PDF, page ranges) | Not exposed in the interface yet; the compiler supports them. |
-| Version history | Explicit checkpoints with diff and restore. No automatic history yet. |
+| Version history | Explicit checkpoints with diff and restore, plus automatic snapshots at most every ten minutes. |

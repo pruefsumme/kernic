@@ -26,6 +26,12 @@ export interface Checkpoint {
 	createdAt: Date;
 }
 
+/** An automatic record of the files, taken between checkpoints. */
+export interface Snapshot {
+	id: string;
+	createdAt: Date;
+}
+
 export type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed';
 
 export interface Change {
@@ -70,6 +76,10 @@ const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_DIFF_LINES_PER_FILE = 1500;
 const GIT_TIMEOUT_MS = 60_000;
 const FIELD = '\x1f';
+
+const SNAPSHOT_REFS = 'refs/kernic/snapshots/';
+const SNAPSHOT_KEEP_ALL_MS = 24 * 60 * 60 * 1000;
+const SNAPSHOT_KEEP_DAILY_MS = 30 * 24 * 60 * 60 * 1000;
 
 const COMMIT_ID = /^[0-9a-f]{40}$/;
 export function isCheckpointId(value: unknown): value is string {
@@ -130,9 +140,9 @@ export class ProjectHistory {
 		};
 	}
 
-	async #git(args: string[]): Promise<string> {
+	async #git(args: string[], extraEnvironment: Record<string, string> = {}): Promise<string> {
 		const { stdout } = await execFileAsync('git', this.#arguments(args), {
-			env: this.#environment,
+			env: { ...this.#environment, ...extraEnvironment },
 			maxBuffer: MAX_OUTPUT_BYTES,
 			timeout: GIT_TIMEOUT_MS
 		});
@@ -175,6 +185,107 @@ export class ProjectHistory {
 		} catch {
 			throw new UnknownCheckpointError();
 		}
+	}
+
+	/** Accepts a checkpoint or an automatic snapshot of this project, nothing else. */
+	async #assertVersion(id: string): Promise<'checkpoint' | Snapshot> {
+		if (!isCheckpointId(id)) throw new UnknownCheckpointError();
+		const snapshot = (await this.snapshots()).find((candidate) => candidate.id === id);
+		if (snapshot) return snapshot;
+		await this.#assertCheckpoint(id);
+		return 'checkpoint';
+	}
+
+	// --- Automatic snapshots --------------------------------------------------
+	//
+	// A snapshot is a commit without parents under refs/kernic/snapshots/<time>.
+	// It is written with a separate index, so neither the branch, nor the staging
+	// area of checkpoints, nor the working files are touched. Checkpoints stay the
+	// only thing on the branch — the history a person curates and may later push.
+
+	async #snapshotRefs(): Promise<(Snapshot & { ref: string; tree: string })[]> {
+		const output = await this.#git([
+			'for-each-ref',
+			'--sort=-refname',
+			`--format=%(objectname)${FIELD}%(refname)${FIELD}%(tree)`,
+			SNAPSHOT_REFS
+		]);
+		return output
+			.split('\n')
+			.filter((line) => line !== '')
+			.map((line) => {
+				const [id, ref, tree] = line.split(FIELD);
+				return {
+					id: id!,
+					ref: ref!,
+					tree: tree!,
+					createdAt: new Date(Number(ref!.slice(SNAPSHOT_REFS.length)) * 1000)
+				};
+			});
+	}
+
+	/** Automatic snapshots, newest first. */
+	async snapshots(): Promise<Snapshot[]> {
+		await this.#ensureRepository();
+		return (await this.#snapshotRefs()).map(({ id, createdAt }) => ({ id, createdAt }));
+	}
+
+	/**
+	 * Records the current files as an automatic snapshot. Returns null when they
+	 * are already recorded, as the newest snapshot or as the last checkpoint.
+	 */
+	async takeSnapshot(now = new Date()): Promise<Snapshot | null> {
+		await this.#ensureRepository();
+		const index = { GIT_INDEX_FILE: path.join(this.#gitDir, 'kernic-snapshot-index') };
+		await this.#git(['add', '--all'], index);
+		const tree = (await this.#git(['write-tree'], index)).trim();
+
+		const [newest] = await this.#snapshotRefs();
+		if (newest?.tree === tree) return null;
+		if (await this.#hasCheckpoints()) {
+			const checkpointTree = (await this.#git(['rev-parse', 'HEAD^{tree}'])).trim();
+			if (checkpointTree === tree) return null;
+		}
+
+		const seconds = Math.floor(now.getTime() / 1000);
+		const date = `${seconds} +0000`;
+		const id = (
+			await this.#git(['commit-tree', tree, '-m', 'Automatic snapshot'], {
+				GIT_AUTHOR_DATE: date,
+				GIT_COMMITTER_DATE: date
+			})
+		).trim();
+		await this.#git(['update-ref', `${SNAPSHOT_REFS}${seconds}`, id]);
+		return { id, createdAt: new Date(seconds * 1000) };
+	}
+
+	/**
+	 * Drops snapshots that are no longer worth keeping: everything from the last
+	 * day stays, then the last snapshot of each day for a month. Checkpoints are
+	 * never removed. Returns how many snapshots were dropped.
+	 */
+	async thinSnapshots(now = new Date()): Promise<number> {
+		await this.#ensureRepository();
+		const keptDays = new Set<string>();
+		let dropped = 0;
+
+		// Newest first, so the first snapshot seen for a day is that day's last.
+		for (const snapshot of await this.#snapshotRefs()) {
+			const age = now.getTime() - snapshot.createdAt.getTime();
+			if (age <= SNAPSHOT_KEEP_ALL_MS) continue;
+
+			const day = snapshot.createdAt.toISOString().slice(0, 10);
+			if (age <= SNAPSHOT_KEEP_DAILY_MS && !keptDays.has(day)) {
+				keptDays.add(day);
+				continue;
+			}
+			await this.#git(['update-ref', '-d', snapshot.ref]);
+			dropped++;
+		}
+
+		// Reclaim the space of dropped snapshots and pack what saving accumulated.
+		if (dropped > 0) await this.#git(['gc', '--quiet', '--prune=now']);
+		return dropped;
 	}
 
 	/** Files that differ from the last checkpoint. */
@@ -244,39 +355,56 @@ export class ProjectHistory {
 	}
 
 	/**
-	 * What changed. With one argument: in that checkpoint, compared with the one
-	 * before it. With `null`: in the current files, compared with the last checkpoint.
+	 * What changed.
+	 * - `null`: in the current files, compared with the last checkpoint.
+	 * - a checkpoint: in that checkpoint, compared with the one before it.
+	 * - a snapshot: in the current files, compared with that snapshot — what
+	 *   restoring it would undo.
 	 */
-	async diff(checkpointId: string | null): Promise<FileDiff[]> {
+	async diff(versionId: string | null): Promise<FileDiff[]> {
 		await this.#ensureRepository();
 		const options = ['--no-color', '--no-ext-diff', '--no-textconv', '--find-renames', '-U3'];
 
-		let output: string;
-		if (checkpointId === null) {
+		if (versionId === null) {
 			if (!(await this.#hasCheckpoints())) return [];
-			// Stage first so new, untracked files show up as additions.
-			await this.#git(['add', '--all', '--intent-to-add']);
-			output = await this.#git(['diff', ...options, 'HEAD']);
-		} else {
-			await this.#assertCheckpoint(checkpointId);
-			output = await this.#git(['show', ...options, '--format=', checkpointId]);
+			return parseDiff(await this.#diffAgainstFiles(options, 'HEAD'));
 		}
-		return parseDiff(output);
+		const version = await this.#assertVersion(versionId);
+		return parseDiff(
+			version === 'checkpoint'
+				? await this.#git(['show', ...options, '--format=', versionId])
+				: await this.#diffAgainstFiles(options, versionId)
+		);
+	}
+
+	/** Diff from a commit to the files on disk, new files included. */
+	async #diffAgainstFiles(options: string[], commit: string): Promise<string> {
+		// Stage first so new, untracked files show up as additions.
+		await this.#git(['add', '--all', '--intent-to-add']);
+		return this.#git(['diff', ...options, commit]);
 	}
 
 	/**
-	 * Brings back the files of an earlier checkpoint. Unsaved-to-history changes
-	 * are checkpointed first, so the restore itself can be undone the same way.
+	 * Brings back the files of an earlier checkpoint or snapshot. Changes not yet
+	 * in the history are checkpointed first, so the restore itself can be undone.
 	 */
 	async restore(checkpointId: string, author: Author): Promise<Checkpoint> {
 		await this.#ensureRepository();
-		await this.#assertCheckpoint(checkpointId);
+		const version = await this.#assertVersion(checkpointId);
 
 		if ((await this.changes()).length > 0) {
-			await this.createCheckpoint('Before restoring an earlier checkpoint', author);
+			await this.createCheckpoint(
+				version === 'checkpoint'
+					? 'Before restoring an earlier checkpoint'
+					: 'Before restoring an automatic snapshot',
+				author
+			);
 		}
 
-		const [target] = (await this.#git(['log', '-1', '--format=%s', checkpointId])).split('\n');
+		const target =
+			version === 'checkpoint'
+				? (await this.#git(['log', '-1', '--format=%s', checkpointId])).split('\n')[0]
+				: `Automatic snapshot of ${version.createdAt.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 		// Make index and files match the old checkpoint exactly, including deletions.
 		await this.#git(['read-tree', '--reset', '-u', checkpointId]);
 		try {
@@ -289,10 +417,10 @@ export class ProjectHistory {
 		}
 	}
 
-	/** A ZIP archive of the files as they were at a checkpoint. */
+	/** A ZIP archive of the files as they were at a checkpoint or snapshot. */
 	async archive(checkpointId: string): Promise<Readable> {
 		await this.#ensureRepository();
-		await this.#assertCheckpoint(checkpointId);
+		await this.#assertVersion(checkpointId);
 		const child = spawn('git', this.#arguments(['archive', '--format=zip', checkpointId]), {
 			env: this.#environment,
 			stdio: ['ignore', 'pipe', 'ignore']

@@ -25,27 +25,7 @@ the item is built.
 
 ## Next
 
-### 1. Automatic snapshots between checkpoints
-
-**Problem.** Between explicit checkpoints nothing is recorded. A wrong paste followed by an hour
-of saves can only be undone back to the last checkpoint.
-
-**Solution.** Use the Git repository each project already has, on a separate reference so the
-checkpoint history (what will later be pushed to a forge) stays clean. No new dependency.
-
-- A snapshot is a commit on `refs/kernic/snapshots`, written with Git plumbing (a temporary
-  index, `git write-tree`, `git commit-tree`, `git update-ref`), without touching the branch or
-  the working files.
-- Taken when a file is saved and the last snapshot is older than 10 minutes, and before any
-  destructive action (delete, restore, import over). Identical content produces no snapshot.
-- Thinned over time: all snapshots of the last 24 hours, then one per day for 30 days;
-  checkpoints are never thinned.
-- Shown in the History panel as a quieter "Automatic" group, with the same diff, restore and
-  ZIP download.
-- Tests: snapshot cadence with a fake clock, thinning, restore from a snapshot, and that
-  snapshots never appear in the checkpoint list.
-
-### 2. Account page, user management and audit log
+### 1. Account page, user management and audit log
 
 **Solution.** Built on what exists (scrypt, the sessions table); no new dependency.
 
@@ -61,7 +41,7 @@ checkpoint history (what will later be pushed to a forge) stays clean. No new de
 - Later, single sign-on against Gitea/Forgejo or another provider with `openid-client`, the
   widely used certified OpenID Connect client for Node. Not verified here.
 
-### 3. UI polish
+### 2. UI polish
 
 The layout and flow are settled; make it more pleasant to look at and smoother.
 
@@ -73,7 +53,7 @@ The layout and flow are settled; make it more pleasant to look at and smoother.
 - Perceived speed: skeletons that match the layout, optimistic file-tree updates.
 - A review of every screen at desktop, tablet and phone widths after the changes.
 
-### 4. Faster preview while typing (parity with typst.app)
+### 3. Faster preview while typing (parity with typst.app)
 
 **Problem.** The preview follows a save by about a second for a long document, because every
 compile starts cold.
@@ -100,7 +80,7 @@ Cold compiles remain for exports and for the first compile.
 - Risk to check when building: detecting "this compile is finished" reliably from watch mode's
   output, and memory held per warm project.
 
-### 5. Editor assistance and source-to-page jumps with Tinymist
+### 4. Editor assistance and source-to-page jumps with Tinymist
 
 Hover documentation, go-to-definition, formatting, rename and diagnostics while typing; clicking
 a place on a page jumps to its source and back.
@@ -114,20 +94,20 @@ a place on a page jumps to its source and back.
   through the language-server protocol, not a shared volume.
 - Not verified: resource use per session, and how Tinymist's preview is best embedded.
 
-### 6. Fonts in the editor
+### 5. Fonts in the editor
 
 The packaged font families are in the worker image now. Still to do: show the server's font
 families in the editor (from `typst fonts`), complete them inside `font: "…"`, and turn the
 compiler's "unknown font family" warning into a message that says how to add the font. An
 optional image variant with Noto CJK (91 MB).
 
-### 7. PDF export options
+### 6. PDF export options
 
 Expose what the compiler already supports: PDF standard (PDF/A variants, PDF/UA), page ranges
 and tagged PDF, in an export dialog. The worker accepts them as a fixed list of allowed values,
 never as free-form arguments.
 
-### 8. Fair compile queue, and readiness for more than one app process
+### 7. Fair compile queue, and readiness for more than one app process
 
 No broker needed for this; PostgreSQL covers it.
 
@@ -139,7 +119,7 @@ No broker needed for this; PostgreSQL covers it.
 - BullMQ with Redis stays an option for many workers; it is established, but it is a second
   service to run and back up, so only when a single worker is not enough.
 
-### 9. Package trust
+### 8. Package trust
 
 **Finding.** Typst Universe's index publishes no checksums (checked: the index has name,
 version, entrypoint, authors, licence and similar fields only), and the official CLI does not
@@ -154,7 +134,7 @@ verify any either. Authenticity rests on HTTPS to the registry.
   of the same version has a different hash (for example after a restore onto a new server).
 - Private packages: administrators upload a package archive into a `local` namespace.
 
-### 10. Checks not yet exercised
+### 9. Checks not yet exercised
 
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
@@ -165,23 +145,23 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 11. Git remotes (Gitea/Forgejo)
+### 10. Git remotes (Gitea/Forgejo)
 
 Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 12. Team access
+### 11. Team access
 
 Team workspaces in the interface, invitations, roles, share links. Builds on the account and
 user management item.
 
-### 13. Real-time collaboration
+### 12. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 14. Operations
+### 13. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -214,3 +194,4 @@ details.
   only near the screen (`a6f95dd`).
 - Each compile confined with Landlock inside the worker container; worker image on Debian 13
   with a larger set of packaged fonts.
+- Automatic snapshots between checkpoints, on their own Git references, thinned over time.

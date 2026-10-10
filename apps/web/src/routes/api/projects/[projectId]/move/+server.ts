@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { projectTreeDir } from '#lib/server/config.ts';
+import { snapshotBeforeChange } from '#lib/server/history/history.ts';
 import { requireProject, throwAsHttpError } from '#lib/server/http.ts';
 import { normalizeProjectPath } from '#lib/server/projects/paths.ts';
 import { withProjectLock } from '#lib/server/projects/lock.ts';
@@ -21,7 +22,10 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const from = normalizeProjectPath(body.from);
 		const to = normalizeProjectPath(body.to);
-		await withProjectLock(project.id, () => moveTreeEntry(projectTreeDir(project.id), from, to));
+		await withProjectLock(project.id, async () => {
+			await snapshotBeforeChange(project.id);
+			await moveTreeEntry(projectTreeDir(project.id), from, to);
+		});
 
 		// Keep the main file pointing at the same document when it, or a folder above it, moves.
 		if (entryPath === from) entryPath = to;

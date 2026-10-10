@@ -3,8 +3,9 @@ import { requireProject, throwAsHttpError } from '#lib/server/http.ts';
 import type { RequestHandler } from './$types';
 
 /**
- * What changed in a checkpoint. The id `working` stands for the current files
- * compared with the last checkpoint.
+ * What changed in a checkpoint; for an automatic snapshot, what changed since
+ * it. The id `working` stands for the current files compared with the last
+ * checkpoint.
  */
 export const GET: RequestHandler = async (event) => {
 	const { project } = await requireProject(event, 'read');

@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { MAX_EDITABLE_BYTES, projectTreeDir, treeLimits } from '#lib/server/config.ts';
+import { snapshotBeforeChange } from '#lib/server/history/history.ts';
 import { readBody, requireProject, throwAsHttpError } from '#lib/server/http.ts';
 import { responseHeadersFor } from '#lib/server/projects/content-types.ts';
 import { withProjectLock } from '#lib/server/projects/lock.ts';
@@ -47,20 +48,23 @@ export const PUT: RequestHandler = async (event) => {
 		error(413, 'This file is too large to edit in the browser.', { code: 'file-too-large' });
 	}
 
-	const hash = await withProjectLock(project.id, () =>
-		writeTreeFile(projectTreeDir(project.id), event.params.path, content, {
+	const hash = await withProjectLock(project.id, async () => {
+		await snapshotBeforeChange(project.id);
+		return writeTreeFile(projectTreeDir(project.id), event.params.path, content, {
 			limits: treeLimits,
 			baseHash
-		})
-	).catch(throwAsHttpError);
+		});
+	}).catch(throwAsHttpError);
 
 	return Response.json({ hash, revision: await bumpRevision(project.id) });
 };
 
 export const DELETE: RequestHandler = async (event) => {
 	const { project } = await requireProject(event, 'write');
-	await withProjectLock(project.id, () =>
-		deleteTreeEntry(projectTreeDir(project.id), event.params.path)
-	).catch(throwAsHttpError);
+	await withProjectLock(project.id, async () => {
+		// Deleting cannot be undone in the editor, so what is about to go is always recorded.
+		await snapshotBeforeChange(project.id, { always: true });
+		await deleteTreeEntry(projectTreeDir(project.id), event.params.path);
+	}).catch(throwAsHttpError);
 	return Response.json({ revision: await bumpRevision(project.id) });
 };

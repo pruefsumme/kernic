@@ -97,3 +97,48 @@ test('history rejects checkpoint ids that are not checkpoints', async ({ page })
 		expect(restore.status(), `restore ${bad}`).toBe(404);
 	}
 });
+
+test('work deleted or overwritten without a checkpoint can be brought back from a snapshot', async ({
+	page
+}) => {
+	await createProject(page, 'Report', 'Snapshots');
+	await page.getByRole('button', { name: 'History', exact: true }).click();
+	const history = panel(page, 'History');
+	await expect(history.getByText('No changes since the last checkpoint.')).toBeVisible();
+
+	// Write something, never checkpoint it, then delete the file it is in.
+	await page.getByRole('button', { name: 'Files', exact: true }).click();
+	const files = panel(page, 'Files');
+	await files.getByRole('button', { name: 'findings.typ', exact: true }).click();
+	await expect(page).toHaveURL(/file=chapters%2Ffindings\.typ/);
+	await appendSource(page, '\nA finding that took all afternoon to write down.');
+	await expect(saveState(page)).toContainText('Saved');
+
+	await files.getByRole('button', { name: 'Actions for findings.typ' }).click();
+	await page.getByRole('menuitem', { name: 'Delete' }).click();
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await expect(files.getByRole('button', { name: 'findings.typ', exact: true })).toHaveCount(0);
+
+	// The deletion was preceded by an automatic snapshot.
+	await page.getByRole('button', { name: 'History', exact: true }).click();
+	await expect(history.getByRole('heading', { name: 'Automatic snapshots' })).toBeVisible();
+	const snapshotActions = history.getByRole('button', { name: /^Actions for the snapshot of/ });
+	await expect(snapshotActions).toHaveCount(1);
+
+	await snapshotActions.click();
+	await page.getByRole('menuitem', { name: 'Changes since then' }).click();
+	const diff = page.getByRole('dialog').filter({ hasText: 'Changes since the automatic snapshot' });
+	await expect(diff.getByText('Deleted')).toBeVisible();
+	await expect(diff.getByText('A finding that took all afternoon to write down.')).toBeVisible();
+	await diff.getByRole('button', { name: 'Close' }).click();
+
+	await snapshotActions.click();
+	await page.getByRole('menuitem', { name: 'Restore this version' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+
+	await page.getByRole('button', { name: 'Files', exact: true }).click();
+	await files.getByRole('button', { name: 'findings.typ', exact: true }).click();
+	await expect(page.locator('.cm-content')).toContainText(
+		'A finding that took all afternoon to write down.'
+	);
+});

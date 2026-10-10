@@ -15,6 +15,37 @@ export function withHistory<T>(
 	return withProjectLock(projectId, () => operation(new ProjectHistory(projectDir(projectId))));
 }
 
+const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
+/** When each project's files were last recorded or found unchanged, per process. */
+const lastSnapshotCheck = new Map<string, number>();
+
+/**
+ * Called just before a project's files are changed, while holding the project
+ * lock. Records the files as they are — the state before this round of editing —
+ * unless that was done in the last ten minutes. `always` skips the interval,
+ * for changes that remove content (deleting a file or folder).
+ *
+ * Never throws: failing to take a snapshot must not prevent the save itself.
+ */
+export async function snapshotBeforeChange(
+	projectId: string,
+	options: { always?: boolean } = {}
+): Promise<void> {
+	const now = Date.now();
+	const last = lastSnapshotCheck.get(projectId) ?? 0;
+	if (!options.always && now - last < SNAPSHOT_INTERVAL_MS) return;
+
+	try {
+		const history = new ProjectHistory(projectDir(projectId));
+		await history.takeSnapshot(new Date(now));
+		lastSnapshotCheck.set(projectId, now);
+		// Thinning looks at every snapshot; once per interval is plenty.
+		if (!options.always) await history.thinSnapshots(new Date(now));
+	} catch (cause) {
+		console.error(`could not take a snapshot of project ${projectId}`, cause);
+	}
+}
+
 export const authorOf = (user: SessionUser): Author => ({
 	name: user.displayName,
 	email: user.email
