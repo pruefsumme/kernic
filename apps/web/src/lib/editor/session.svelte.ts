@@ -48,7 +48,8 @@ export interface Render {
 	revision: number | null;
 }
 
-const AUTOSAVE_DELAY_MS = 800;
+/** Pause in typing after which changes are saved, and the preview follows. */
+const AUTOSAVE_DELAY_MS = 400;
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : 'Something went wrong.';

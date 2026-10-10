@@ -7,93 +7,19 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { loadConfig, type WorkerConfig } from '../src/config.ts';
+import { loadConfig } from '../src/config.ts';
 import { createWorker } from '../src/server.ts';
 
-const TOKEN = 'test-token-test-token-test-token';
-
-interface Harness {
-	baseUrl: string;
-	workDir: string;
-	close: () => Promise<void>;
-}
-
-async function startWorker(env: Record<string, string> = {}): Promise<Harness> {
-	const workDir = await mkdtemp(path.join(tmpdir(), 'kernic-worker-test-'));
-	const config: WorkerConfig = loadConfig({
-		KERNIC_WORKER_TOKEN: TOKEN,
-		KERNIC_WORKER_DIR: workDir,
-		KERNIC_WORKER_SANDBOX: process.env.KERNIC_WORKER_SANDBOX ?? 'bwrap',
-		...env
-	});
-	const { server } = await createWorker(config);
-	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-	const { port } = server.address() as AddressInfo;
-
-	return {
-		baseUrl: `http://127.0.0.1:${port}`,
-		workDir,
-		close: async () => {
-			await new Promise((resolve) => server.close(resolve));
-			await rm(workDir, { recursive: true, force: true });
-		}
-	};
-}
-
-function sha256(content: string | Buffer): string {
-	return createHash('sha256').update(content).digest('hex');
-}
-
-const auth = { authorization: `Bearer ${TOKEN}` };
-
-async function uploadBlob(harness: Harness, content: string): Promise<string> {
-	const hash = sha256(content);
-	const response = await fetch(`${harness.baseUrl}/blobs/${hash}`, {
-		method: 'PUT',
-		headers: auth,
-		body: content
-	});
-	assert.equal(response.status, 200);
-	return hash;
-}
-
-type PackageSource = {
-	namespace: string;
-	name: string;
-	version: string;
-	files: Record<string, string>;
-};
-
-async function uploadAll(harness: Harness, files: Record<string, string>) {
-	const list = [];
-	for (const [filePath, content] of Object.entries(files)) {
-		list.push({ path: filePath, sha256: await uploadBlob(harness, content) });
-	}
-	return list;
-}
-
-async function compile(
-	harness: Harness,
-	files: Record<string, string>,
-	options: { entry?: string; format?: 'svg' | 'pdf'; packages?: PackageSource[] } = {}
-) {
-	const snapshot = await uploadAll(harness, files);
-	const packages = [];
-	for (const item of options.packages ?? []) {
-		packages.push({ ...item, files: await uploadAll(harness, item.files) });
-	}
-	const response = await fetch(`${harness.baseUrl}/compile`, {
-		method: 'POST',
-		headers: { ...auth, 'content-type': 'application/json' },
-		body: JSON.stringify({
-			entry: options.entry ?? 'main.typ',
-			format: options.format ?? 'svg',
-			files: snapshot,
-			packages
-		})
-	});
-	return { status: response.status, body: (await response.json()) as any };
-}
+import {
+	auth,
+	compile,
+	sha256,
+	startWorker,
+	uploadAll,
+	uploadBlob,
+	TOKEN,
+	type Harness
+} from './harness.ts';
 
 describe('compile worker', () => {
 	let harness: Harness;
@@ -226,6 +152,66 @@ describe('compile worker', () => {
 	test('cleans up the job directory after each compile', async () => {
 		await compile(harness, { 'main.typ': 'Hello' });
 		assert.deepEqual(await readdir(path.join(harness.workDir, 'jobs')), []);
+	});
+});
+
+describe('pages the caller already has', () => {
+	test('are identified by hash and not sent again', async () => {
+		const harness = await startWorker();
+		try {
+			const source = { 'main.typ': 'First page\n#pagebreak()\nSecond page' };
+			const first = await compile(harness, source);
+			assert.equal(first.body.ok, true, JSON.stringify(first.body.diagnostics));
+			const [one, two] = first.body.artifacts;
+			assert.match(one.sha256, /^[0-9a-f]{64}$/);
+			assert.equal(
+				one.sha256,
+				createHash('sha256').update(Buffer.from(one.data, 'base64')).digest('hex')
+			);
+			assert.ok(one.width > 500 && one.height > 800, 'page size in points');
+
+			// Change only the second page and say which pages are already stored.
+			const snapshot = await uploadAll(harness, {
+				'main.typ': 'First page\n#pagebreak()\nSecond page, edited'
+			});
+			const response = await fetch(`${harness.baseUrl}/compile`, {
+				method: 'POST',
+				headers: { ...auth, 'content-type': 'application/json' },
+				body: JSON.stringify({
+					entry: 'main.typ',
+					format: 'svg',
+					files: snapshot,
+					knownPages: [one.sha256, two.sha256]
+				})
+			});
+			const second = (await response.json()) as any;
+			assert.equal(second.artifacts[0].sha256, one.sha256);
+			assert.equal(second.artifacts[0].data, null, 'the unchanged page is not sent');
+			assert.notEqual(second.artifacts[1].sha256, two.sha256);
+			assert.equal(typeof second.artifacts[1].data, 'string', 'the changed page is sent');
+		} finally {
+			await harness.close();
+		}
+	});
+
+	test('rejects a malformed list of known pages', async () => {
+		const harness = await startWorker();
+		try {
+			const snapshot = await uploadAll(harness, { 'main.typ': 'x' });
+			const response = await fetch(`${harness.baseUrl}/compile`, {
+				method: 'POST',
+				headers: { ...auth, 'content-type': 'application/json' },
+				body: JSON.stringify({
+					entry: 'main.typ',
+					format: 'svg',
+					files: snapshot,
+					knownPages: ['../x']
+				})
+			});
+			assert.equal(response.status, 400);
+		} finally {
+			await harness.close();
+		}
 	});
 });
 

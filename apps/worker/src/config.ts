@@ -22,6 +22,22 @@ export interface WorkerConfig {
 	/** Optional read-only directory with vendored Typst packages (`--package-path`). */
 	packageDir: string | null;
 	limits: CompileLimits;
+	warm: WarmLimits;
+}
+
+/**
+ * Bounds for compilers that stay running between preview compiles of the same
+ * project. Each holds what it computed in memory, so their number is small.
+ */
+export interface WarmLimits {
+	/** Projects that may have a running compiler at once; 0 turns the feature off. */
+	maxSessions: number;
+	/** A compiler nobody used for this long is stopped. */
+	idleMs: number;
+	/** A compiler holding more memory than this is replaced before its next compile. */
+	maxResidentBytes: number;
+	/** Projects with larger sources are compiled from scratch each time. */
+	maxSourceBytes: number;
 }
 
 export interface CompileLimits {
@@ -86,6 +102,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
 			maxConcurrent: integer(env, 'KERNIC_WORKER_CONCURRENCY', 2),
 			maxQueued: integer(env, 'KERNIC_WORKER_QUEUE', 16, 0),
 			typstJobs: integer(env, 'KERNIC_TYPST_JOBS', 2)
+		},
+		warm: {
+			maxSessions: integer(env, 'KERNIC_WARM_SESSIONS', 2, 0),
+			idleMs: integer(env, 'KERNIC_WARM_IDLE_SECONDS', 600) * 1000,
+			maxResidentBytes: integer(env, 'KERNIC_WARM_MEMORY_MB', 1024) * MiB,
+			maxSourceBytes: integer(env, 'KERNIC_WARM_SOURCE_MB', 64) * MiB
 		}
 	};
 }

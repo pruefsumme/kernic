@@ -90,16 +90,24 @@ async function explainPackageErrors(
 
 const MAX_ATTEMPTS = 4;
 
+export interface CompileOptions {
+	/** Hashes of rendered pages the caller already has; their content is not returned again. */
+	knownPages?: string[];
+	/** Lets the worker keep a compiler running for what is being edited, here a project. */
+	session?: string;
+}
+
 export async function compileProject(
 	root: string,
 	entry: string,
-	format: OutputFormat
+	format: OutputFormat,
+	options: CompileOptions = {}
 ): Promise<ProjectCompile> {
 	// Files may be saved or restored while a compile is being prepared. Start
 	// over from a fresh snapshot then, instead of compiling a mixture.
 	for (let attempt = 1; ; attempt++) {
 		try {
-			return await compileOnce(root, entry, format);
+			return await compileOnce(root, entry, format, options);
 		} catch (error) {
 			if (!(error instanceof SnapshotChangedError) || attempt === MAX_ATTEMPTS) throw error;
 		}
@@ -109,12 +117,20 @@ export async function compileProject(
 async function compileOnce(
 	root: string,
 	entry: string,
-	format: OutputFormat
+	format: OutputFormat,
+	options: CompileOptions
 ): Promise<ProjectCompile> {
 	const snapshot = await snapshotTree(root);
 	const { packages, failures } = await resolvePackages(await importedPackages(root, snapshot));
 
-	const result = await compileSnapshot({ entry, format, root, files: snapshot.files, packages });
+	const result = await compileSnapshot({
+		entry,
+		format,
+		root,
+		files: snapshot.files,
+		packages,
+		...options
+	});
 	return {
 		snapshot,
 		result: {

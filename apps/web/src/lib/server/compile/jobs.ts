@@ -10,7 +10,8 @@ import {
 	SnapshotChangedError,
 	WorkerUnavailableError,
 	type Diagnostic,
-	type OutputFormat
+	type OutputFormat,
+	type WorkerArtifact
 } from './worker-client';
 
 /**
@@ -293,28 +294,43 @@ async function runJob(job: CompileJob): Promise<void> {
 		return;
 	}
 
-	const { snapshot, result } = await compileProject(root, project.entry_path, job.format);
+	// After a small edit most pages of a long document are unchanged. Telling the
+	// worker which pages are stored already saves sending them back.
+	const knownPages = job.format === 'svg' ? await storedPageHashes(job.projectId) : [];
+	// Previews of one project share a compiler that stays running in the worker.
+	const session = job.format === 'svg' ? job.projectId : undefined;
+	let compiled = await compileProject(root, project.entry_path, job.format, {
+		knownPages,
+		session
+	});
+
+	let pages: RenderedPage[] | null = null;
+	if (compiled.result.ok && job.format === 'svg') {
+		try {
+			pages = await storePages(job.projectId, compiled.result.artifacts, new Set(knownPages));
+		} catch (error) {
+			if (!(error instanceof PageMissingError)) throw error;
+			// A page counted as stored was cleaned up meanwhile: ask for every page.
+			compiled = await compileProject(root, project.entry_path, job.format, { session });
+			pages = compiled.result.ok
+				? await storePages(job.projectId, compiled.result.artifacts, new Set())
+				: null;
+		}
+	} else if (compiled.result.ok) {
+		const pdf = compiled.result.artifacts[0]?.data;
+		if (!pdf) throw new WorkerUnavailableError('The compile worker returned no PDF.');
+		const directory = jobArtifactsDir(job.projectId, job.id);
+		await fs.mkdir(directory, { recursive: true });
+		await fs.writeFile(path.join(directory, 'output.pdf'), Buffer.from(pdf, 'base64'));
+	}
+
+	const { snapshot, result } = compiled;
 	await sql`
 		UPDATE compile_jobs
 		SET revision = ${project.revision}, source_hash = ${snapshot.sourceHash},
 			entry_path = ${project.entry_path}
 		WHERE id = ${job.id}
 	`;
-
-	let pages: RenderedPage[] | null = null;
-	if (result.ok && job.format === 'svg') {
-		pages = await storePages(
-			job.projectId,
-			result.artifacts.map((artifact) => Buffer.from(artifact.data, 'base64'))
-		);
-	} else if (result.ok) {
-		const directory = jobArtifactsDir(job.projectId, job.id);
-		await fs.mkdir(directory, { recursive: true });
-		await fs.writeFile(
-			path.join(directory, 'output.pdf'),
-			Buffer.from(result.artifacts[0]!.data, 'base64')
-		);
-	}
 
 	await finishJob(job, {
 		status: result.ok ? 'succeeded' : 'failed',
@@ -327,22 +343,69 @@ async function runJob(job: CompileJob): Promise<void> {
 }
 
 const SVG_SIZE = /<svg[^>]*\swidth="([\d.]+)pt"\s+height="([\d.]+)pt"/;
+/** A4 in points, should a future Typst change the header the size is read from. */
+const FALLBACK_PAGE = { width: 595.28, height: 841.89 };
+/** More stored pages than this are not worth listing to the worker. */
+const MAX_KNOWN_PAGES = 5000;
+
+/** A page the worker was told is stored here no longer is. */
+class PageMissingError extends Error {}
+
+async function storedPageHashes(projectId: string): Promise<string[]> {
+	const names = await fs.readdir(pageStoreDir(projectId)).catch(() => []);
+	return names
+		.filter((name) => name.endsWith('.svg') && PAGE_HASH.test(name.slice(0, -4)))
+		.map((name) => name.slice(0, -4))
+		.slice(0, MAX_KNOWN_PAGES);
+}
+
+const pageDimension = (value: unknown, fallback: number) =>
+	typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 100_000
+		? value
+		: fallback;
 
 /**
  * Stores pages by content hash. A page that is identical to one already stored
- * (most pages, between two compiles of a long document) costs nothing.
+ * (most pages, between two compiles of a long document) costs nothing, and the
+ * worker does not even send it: such a page arrives as a hash without content.
  */
-async function storePages(projectId: string, svgs: Buffer[]): Promise<RenderedPage[]> {
+async function storePages(
+	projectId: string,
+	artifacts: WorkerArtifact[],
+	knownPages: Set<string>
+): Promise<RenderedPage[]> {
 	const directory = pageStoreDir(projectId);
 	await fs.mkdir(directory, { recursive: true });
 
 	const pages: RenderedPage[] = [];
-	for (const svg of svgs) {
+	for (const artifact of artifacts) {
+		const now = new Date();
+
+		if (artifact.data === null) {
+			// Only hashes this server listed are accepted without content.
+			if (!knownPages.has(artifact.sha256)) {
+				throw new WorkerUnavailableError('The compile worker left out a page it had to send.');
+			}
+			try {
+				// Mark a reused page as fresh, which keeps it out of a concurrent clean-up.
+				await fs.utimes(path.join(directory, `${artifact.sha256}.svg`), now, now);
+			} catch {
+				throw new PageMissingError();
+			}
+			pages.push({
+				hash: artifact.sha256,
+				width: pageDimension(artifact.width, FALLBACK_PAGE.width),
+				height: pageDimension(artifact.height, FALLBACK_PAGE.height)
+			});
+			continue;
+		}
+
+		// The address is computed here, not taken from the worker, so a stored
+		// page always is what its name says.
+		const svg = Buffer.from(artifact.data, 'base64');
 		const hash = createHash('sha256').update(svg).digest('hex');
 		const target = path.join(directory, `${hash}.svg`);
 		try {
-			// Mark a reused page as fresh, which keeps it out of a concurrent clean-up.
-			const now = new Date();
 			await fs.utimes(target, now, now);
 		} catch {
 			// Write beside the final name and rename, so a reader never sees half a page.
@@ -352,8 +415,11 @@ async function storePages(projectId: string, svgs: Buffer[]): Promise<RenderedPa
 		}
 
 		const size = SVG_SIZE.exec(svg.subarray(0, 512).toString('latin1'));
-		// A4 in points, should a future Typst change the header this is read from.
-		pages.push({ hash, width: Number(size?.[1] ?? 595.28), height: Number(size?.[2] ?? 841.89) });
+		pages.push({
+			hash,
+			width: Number(size?.[1] ?? FALLBACK_PAGE.width),
+			height: Number(size?.[2] ?? FALLBACK_PAGE.height)
+		});
 	}
 	return pages;
 }

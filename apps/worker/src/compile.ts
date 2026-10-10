@@ -1,14 +1,16 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { collectArtifacts, isOutputName, type Artifact, type OutputFormat } from './artifacts.ts';
 import type { BlobStore } from './blobs.ts';
 import type { CompileLimits, SandboxMode } from './config.ts';
-import { hasErrors, parseDiagnostics, type Diagnostic } from './diagnostics.ts';
+import { hasErrors, hideJobPaths, parseDiagnostics, type Diagnostic } from './diagnostics.ts';
 import { isSafeRelativePath, isSha256 } from './paths.ts';
-import { buildCompileCommand, type JobPaths, type Toolchain } from './sandbox.ts';
+import { buildCompileCommand, compilerView, type JobPaths, type Toolchain } from './sandbox.ts';
+import type { WarmSessions } from './sessions.ts';
 
-export type OutputFormat = 'svg' | 'pdf';
+export type { Artifact, OutputFormat };
 
 export interface SnapshotFile {
 	path: string;
@@ -29,13 +31,17 @@ export interface CompileRequest {
 	files: SnapshotFile[];
 	/** Packages the document may import. The worker never downloads any itself. */
 	packages: PackageFiles[];
-}
-
-export interface Artifact {
-	name: string;
-	size: number;
-	/** Base64-encoded file content. */
-	data: string;
+	/**
+	 * Hashes of rendered pages the caller already stores. Their content is not
+	 * sent again: after a small edit to a long document, most pages are unchanged.
+	 */
+	knownPages: Set<string>;
+	/**
+	 * Names what is being edited, typically a project. Preview compiles that
+	 * share a name may be served by one compiler that stays running between
+	 * them, which makes each following compile much faster.
+	 */
+	session: string | null;
 }
 
 export interface CompileResult {
@@ -45,6 +51,8 @@ export interface CompileResult {
 	durationMs: number;
 	typstVersion: string;
 	timedOut: boolean;
+	/** Whether a compiler that was already running for this session produced the result. */
+	warm: boolean;
 }
 
 export class InvalidRequestError extends Error {}
@@ -59,6 +67,7 @@ export class MissingBlobsError extends Error {
 }
 
 const MAX_LOG_BYTES = 256 * 1024;
+const SESSION_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 const PACKAGE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const PACKAGE_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
@@ -115,7 +124,7 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 	if (typeof body !== 'object' || body === null) {
 		throw new InvalidRequestError('request body must be a JSON object');
 	}
-	const { entry, format, files, packages } = body as Record<string, unknown>;
+	const { entry, format, files, packages, knownPages, session } = body as Record<string, unknown>;
 
 	if (format !== 'svg' && format !== 'pdf') {
 		throw new InvalidRequestError('format must be "svg" or "pdf"');
@@ -132,7 +141,20 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 	if (!snapshot.some((file) => file.path === entry)) {
 		throw new InvalidRequestError('entry file is not part of the snapshot');
 	}
-	return { entry, format, files: snapshot, packages: packageFiles };
+	if (knownPages !== undefined && !(Array.isArray(knownPages) && knownPages.every(isSha256))) {
+		throw new InvalidRequestError('knownPages must be an array of sha256 hashes');
+	}
+	if (session !== undefined && !(typeof session === 'string' && SESSION_NAME.test(session))) {
+		throw new InvalidRequestError('session must be a short name of letters, digits, - and _');
+	}
+	return {
+		entry,
+		format,
+		files: snapshot,
+		packages: packageFiles,
+		knownPages: new Set((knownPages as string[] | undefined) ?? []),
+		session: (session as string | undefined) ?? null
+	};
 }
 
 interface RunOutcome {
@@ -201,8 +223,23 @@ function runCommand(
 	});
 }
 
-function failure(message: string): Diagnostic {
+export function failure(message: string): Diagnostic {
 	return { severity: 'error', message, path: null, line: null, column: null };
+}
+
+/** Copies snapshot files from the blob cache to their paths below `directory`. */
+export async function materialize(
+	blobs: BlobStore,
+	files: SnapshotFile[],
+	directory: string
+): Promise<void> {
+	const missing: string[] = [];
+	for (const file of files) {
+		const destination = path.join(directory, file.path);
+		await mkdir(path.dirname(destination), { recursive: true });
+		if (!(await blobs.copyTo(file.sha256, destination))) missing.push(file.sha256);
+	}
+	if (missing.length > 0) throw new MissingBlobsError(missing);
 }
 
 export class Compiler {
@@ -212,6 +249,7 @@ export class Compiler {
 	readonly #limits: CompileLimits;
 	readonly #jobsDir: string;
 	readonly #packageDir: string | null;
+	readonly #sessions: WarmSessions | null;
 
 	constructor(options: {
 		blobs: BlobStore;
@@ -220,6 +258,7 @@ export class Compiler {
 		limits: CompileLimits;
 		jobsDir: string;
 		packageDir: string | null;
+		sessions?: WarmSessions | null;
 	}) {
 		this.#blobs = options.blobs;
 		this.#toolchain = options.toolchain;
@@ -227,6 +266,7 @@ export class Compiler {
 		this.#limits = options.limits;
 		this.#jobsDir = options.jobsDir;
 		this.#packageDir = options.packageDir;
+		this.#sessions = options.sessions ?? null;
 	}
 
 	/** Removes job directories left behind by a crash. */
@@ -238,6 +278,14 @@ export class Compiler {
 	async compile(request: CompileRequest): Promise<CompileResult> {
 		const packageFiles = request.packages.flatMap((item) => item.files);
 		this.#checkSnapshot([...request.files, ...packageFiles]);
+
+		// A preview compile for a named session first tries the compiler that is
+		// already running for it. It answers null whenever it cannot vouch for a
+		// result, and the compile then runs from scratch as below.
+		if (this.#sessions && request.session !== null && request.format === 'svg') {
+			const warm = await this.#sessions.compile(request, request.session);
+			if (warm) return warm;
+		}
 
 		const jobDir = path.join(this.#jobsDir, randomUUID());
 		const paths: JobPaths = {
@@ -251,12 +299,12 @@ export class Compiler {
 			await mkdir(paths.sourceDir, { recursive: true });
 			await mkdir(paths.outputDir);
 			await mkdir(paths.packageCacheDir);
-			await this.#materialize(request.files, paths.sourceDir);
+			await materialize(this.#blobs, request.files, paths.sourceDir);
 			// Typst looks for packages in `<cache>/<namespace>/<name>/<version>` before it
 			// would try to download them; everything a document may import is placed there.
 			for (const item of request.packages) {
 				const directory = path.join(paths.packageCacheDir, item.namespace, item.name, item.version);
-				await this.#materialize(item.files, directory);
+				await materialize(this.#blobs, item.files, directory);
 			}
 			return await this.#run(request, paths);
 		} finally {
@@ -276,16 +324,6 @@ export class Compiler {
 		if (totalBytes > this.#limits.maxSnapshotBytes) {
 			throw new InvalidRequestError(`snapshot exceeds ${this.#limits.maxSnapshotBytes} bytes`);
 		}
-	}
-
-	async #materialize(files: SnapshotFile[], sourceDir: string): Promise<void> {
-		const missing: string[] = [];
-		for (const file of files) {
-			const destination = path.join(sourceDir, file.path);
-			await mkdir(path.dirname(destination), { recursive: true });
-			if (!(await this.#blobs.copyTo(file.sha256, destination))) missing.push(file.sha256);
-		}
-		if (missing.length > 0) throw new MissingBlobsError(missing);
 	}
 
 	async #run(request: CompileRequest, paths: JobPaths): Promise<CompileResult> {
@@ -308,11 +346,15 @@ export class Compiler {
 
 		const result: CompileResult = {
 			ok: false,
-			diagnostics: parseDiagnostics(outcome.stderr),
+			diagnostics: hideJobPaths(
+				parseDiagnostics(outcome.stderr),
+				compilerView(this.#sandbox, paths)
+			),
 			artifacts: [],
 			durationMs,
 			typstVersion: this.#toolchain.typstVersion,
-			timedOut: outcome.timedOut
+			timedOut: outcome.timedOut,
+			warm: false
 		};
 
 		if (outcome.timedOut) {
@@ -328,7 +370,16 @@ export class Compiler {
 			return result;
 		}
 
-		const artifacts = await this.#collectArtifacts(paths.outputDir, request.format);
+		const names = (await readdir(paths.outputDir)).filter((name) =>
+			isOutputName(name, request.format)
+		);
+		const artifacts = await collectArtifacts(
+			paths.outputDir,
+			names,
+			request.format,
+			request.knownPages,
+			this.#limits
+		);
 		if (typeof artifacts === 'string') {
 			result.diagnostics.push(failure(artifacts));
 			return result;
@@ -356,32 +407,5 @@ export class Compiler {
 		return detail
 			? `The compiler stopped unexpectedly: ${detail}`
 			: 'The compiler stopped unexpectedly.';
-	}
-
-	/** Reads the output directory. Returns an error message when the output breaks a limit. */
-	async #collectArtifacts(outputDir: string, format: OutputFormat): Promise<Artifact[] | string> {
-		const expected = format === 'svg' ? /^page-\d+\.svg$/ : /^output\.pdf$/;
-		const names = (await readdir(outputDir)).filter((name) => expected.test(name)).sort();
-
-		if (names.length === 0) return 'The compiler finished without producing any output.';
-		if (names.length > this.#limits.maxPages) {
-			return `The document has more than ${this.#limits.maxPages} pages, which is the limit for this server.`;
-		}
-
-		let totalBytes = 0;
-		for (const name of names) {
-			totalBytes += (await stat(path.join(outputDir, name))).size;
-		}
-		if (totalBytes > this.#limits.outputBytes) {
-			const megabytes = Math.round(this.#limits.outputBytes / (1024 * 1024));
-			return `The rendered output is larger than ${megabytes} MB, which is the limit for this server.`;
-		}
-
-		const artifacts: Artifact[] = [];
-		for (const name of names) {
-			const content = await readFile(path.join(outputDir, name));
-			artifacts.push({ name, size: content.length, data: content.toString('base64') });
-		}
-		return artifacts;
 	}
 }

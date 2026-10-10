@@ -25,34 +25,11 @@ the item is built.
 
 ## Next
 
-### 1. Faster preview while typing (parity with typst.app)
+### 1. Editor assistance and source-to-page jumps with Tinymist
 
-**Problem.** The preview follows a save by about a second for a long document, because every
-compile starts cold.
-
-**Options considered.**
-
-- *Compile in the browser with typst.ts* — instant, but its releases trail the official compiler
-  (pre-release builds against release candidates), so preview and exported PDF could differ, and
-  it puts a second renderer in the product. Not now.
-- *Tinymist's preview server* — incremental, renders only the visible part, and supports
-  jumping between source and page. The right long-term answer together with the Tinymist item below, but it is a
-  second process per open project with its own protocol. Later.
-- *The official CLI in watch mode* — **chosen as the first step.** One long-lived
-  `typst watch` per open project keeps the compiler's incremental state.
-
-**Solution.** The worker keeps a warm `typst watch` per recently active project (bounded count,
-closed after idle minutes), fed by the same file snapshots, under the same sandbox and limits.
-Cold compiles remain for exports and for the first compile.
-
-- Tested here: the 75-page test document compiles in 844 ms cold and in 220–245 ms on each
-  following edit in watch mode, with the official CLI.
-- Then shorten the autosave delay for the preview, so the page follows typing within about half
-  a second.
-- Risk to check when building: detecting "this compile is finished" reliably from watch mode's
-  output, and memory held per warm project.
-
-### 2. Editor assistance and source-to-page jumps with Tinymist
+This is also the next step for preview speed: Tinymist's preview renders incrementally and only
+what is visible, where the warm compiler (see "Done") still renders whole pages about 0.4 s
+after a pause in typing.
 
 Hover documentation, go-to-definition, formatting, rename and diagnostics while typing; clicking
 a place on a page jumps to its source and back.
@@ -66,20 +43,20 @@ a place on a page jumps to its source and back.
   through the language-server protocol, not a shared volume.
 - Not verified: resource use per session, and how Tinymist's preview is best embedded.
 
-### 3. Fonts in the editor
+### 2. Fonts in the editor
 
 The packaged font families are in the worker image now. Still to do: show the server's font
 families in the editor (from `typst fonts`), complete them inside `font: "…"`, and turn the
 compiler's "unknown font family" warning into a message that says how to add the font. An
 optional image variant with Noto CJK (91 MB).
 
-### 4. PDF export options
+### 3. PDF export options
 
 Expose what the compiler already supports: PDF standard (PDF/A variants, PDF/UA), page ranges
 and tagged PDF, in an export dialog. The worker accepts them as a fixed list of allowed values,
 never as free-form arguments.
 
-### 5. Fair compile queue, and readiness for more than one app process
+### 4. Fair compile queue, and readiness for more than one app process
 
 No broker needed for this; PostgreSQL covers it.
 
@@ -91,7 +68,7 @@ No broker needed for this; PostgreSQL covers it.
 - BullMQ with Redis stays an option for many workers; it is established, but it is a second
   service to run and back up, so only when a single worker is not enough.
 
-### 6. Package trust
+### 5. Package trust
 
 **Finding.** Typst Universe's index publishes no checksums (checked: the index has name,
 version, entrypoint, authors, licence and similar fields only), and the official CLI does not
@@ -106,7 +83,7 @@ verify any either. Authenticity rests on HTTPS to the registry.
   of the same version has a different hash (for example after a restore onto a new server).
 - Private packages: administrators upload a package archive into a `local` namespace.
 
-### 7. Checks not yet exercised
+### 6. Checks not yet exercised
 
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
@@ -117,23 +94,23 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 8. Git remotes (Gitea/Forgejo)
+### 7. Git remotes (Gitea/Forgejo)
 
 Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 9. Team access
+### 8. Team access
 
 Team workspaces in the interface, membership and roles, share links. Accounts and invitations
 exist; what is missing is putting several people into one workspace.
 
-### 10. Real-time collaboration
+### 9. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 11. Operations
+### 10. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -175,3 +152,8 @@ details.
   renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.
 - Account page (name, password, sessions), people management by invitation and reset links,
   activity log.
+- Faster preview while typing: the worker keeps one `typst watch` per recently edited project
+  (same confinement and limits, bounded number, memory and idle time) and falls back to a
+  compile from scratch whenever it cannot vouch for a result; pages the app already stores are
+  not sent again; autosave after 0.4 s. Measured on the 75-page document: 1.2 s per edit before,
+  0.4 s after, in development and in Docker.

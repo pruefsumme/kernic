@@ -130,8 +130,36 @@ async function assertLandlockWorks(setprivPath: string): Promise<void> {
 	}
 }
 
+/**
+ * Where the compiler sees a job's files, which is what its messages mention.
+ * These are internal places that mean nothing to the author of a document.
+ */
+export function compilerView(sandbox: SandboxMode, paths: JobPaths): JobPaths {
+	return sandbox === 'bwrap' ? INSIDE_BWRAP : paths;
+}
+
+const INSIDE_BWRAP: JobPaths = {
+	sourceDir: '/job/src',
+	outputDir: '/job/out',
+	packageCacheDir: '/job/package-cache',
+	packageDir: '/job/packages'
+};
+
+/** Name of the file, in the output directory, that a watching compiler writes after each compile. */
+export const DEPENDENCIES_FILE = 'deps.json';
+
+/**
+ * `compile` runs once and exits. `watch` keeps the compiler running: it
+ * compiles again when a source file changes and reuses what it computed before.
+ */
+export type CompilerMode = 'compile' | 'watch';
+
+/** How much more processor time a watching compiler may use in its life than one compile. */
+const WATCH_CPU_FACTOR = 20;
+
 /** Typst arguments, with paths as seen from inside the (possibly remapped) job. */
 function typstArgs(
+	mode: CompilerMode,
 	format: 'svg' | 'pdf',
 	entry: string,
 	paths: JobPaths,
@@ -143,7 +171,7 @@ function typstArgs(
 			: path.join(paths.outputDir, 'output.pdf');
 
 	const args = [
-		'compile',
+		mode,
 		'--root',
 		paths.sourceDir,
 		// Fonts uploaded into the project are picked up from anywhere in its tree.
@@ -159,12 +187,21 @@ function typstArgs(
 		format
 	];
 	if (paths.packageDir) args.push('--package-path', paths.packageDir);
+	if (mode === 'watch') {
+		// Written last in every compile, which tells the worker that one has finished.
+		args.push('--deps', path.join(paths.outputDir, DEPENDENCIES_FILE), '--deps-format', 'json');
+	}
 	args.push(path.join(paths.sourceDir, entry), output);
 	return args;
 }
 
-function rlimitArgs(limits: CompileLimits): string[] {
-	const cpuSeconds = Math.ceil(limits.timeoutMs / 1000) * limits.typstJobs;
+function rlimitArgs(limits: CompileLimits, mode: CompilerMode): string[] {
+	// A watching compiler serves many compiles; the worker times each of them,
+	// and this bounds what the process may use over its whole life.
+	const cpuSeconds =
+		Math.ceil(limits.timeoutMs / 1000) *
+		limits.typstJobs *
+		(mode === 'watch' ? WATCH_CPU_FACTOR : 1);
 	return [
 		`--as=${limits.memoryBytes}`,
 		`--fsize=${limits.outputBytes}`,
@@ -192,7 +229,7 @@ function systemMounts(): string[] {
 }
 
 /**
- * Builds the command that compiles one job.
+ * Builds the command that compiles one job, or that keeps compiling it (`watch`).
  *
  * `prlimit` always applies per-process resource limits. With the `bwrap`
  * sandbox the compiler additionally runs in fresh namespaces: no network, an
@@ -206,14 +243,27 @@ export function buildCompileCommand(
 	format: 'svg' | 'pdf',
 	entry: string,
 	paths: JobPaths,
-	limits: CompileLimits
+	limits: CompileLimits,
+	mode: CompilerMode = 'compile'
 ): Command {
-	const limitsPrefix = [...rlimitArgs(limits), '--'];
+	const limitsPrefix = [...rlimitArgs(limits, mode), '--'];
+	// A long-lived compiler must not outlive a worker that crashed. bubblewrap
+	// has its own switch for this; elsewhere setpriv arranges it.
+	const dieWithWorker = mode === 'watch' ? ['--pdeathsig', 'KILL'] : [];
 
 	if (sandbox === 'none') {
+		const wrapper =
+			toolchain.setprivPath && dieWithWorker.length > 0
+				? [toolchain.setprivPath, ...dieWithWorker, '--']
+				: [];
 		return {
 			file: toolchain.prlimitPath,
-			args: [...limitsPrefix, toolchain.typstPath, ...typstArgs(format, entry, paths, limits)],
+			args: [
+				...limitsPrefix,
+				...wrapper,
+				toolchain.typstPath,
+				...typstArgs(mode, format, entry, paths, limits)
+			],
 			cwd: paths.sourceDir,
 			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
 		};
@@ -242,12 +292,13 @@ export function buildCompileCommand(
 			args: [
 				...limitsPrefix,
 				toolchain.setprivPath,
+				...dieWithWorker,
 				'--landlock-access',
 				'fs',
 				...rules,
 				'--',
 				toolchain.typstPath,
-				...typstArgs(format, entry, paths, limits)
+				...typstArgs(mode, format, entry, paths, limits)
 			],
 			cwd: paths.sourceDir,
 			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
@@ -257,10 +308,8 @@ export function buildCompileCommand(
 	if (!toolchain.bwrapPath) throw new Error('bubblewrap is not available');
 
 	const inside: JobPaths = {
-		sourceDir: '/job/src',
-		outputDir: '/job/out',
-		packageCacheDir: '/job/package-cache',
-		packageDir: paths.packageDir ? '/job/packages' : null
+		...INSIDE_BWRAP,
+		packageDir: paths.packageDir ? INSIDE_BWRAP.packageDir : null
 	};
 
 	const bwrapArgs = [
@@ -305,7 +354,7 @@ export function buildCompileCommand(
 			...limitsPrefix,
 			toolchain.bwrapPath,
 			...bwrapArgs,
-			...typstArgs(format, entry, inside, limits)
+			...typstArgs(mode, format, entry, inside, limits)
 		],
 		cwd: paths.sourceDir,
 		env: {}

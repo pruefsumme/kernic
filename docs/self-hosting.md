@@ -83,6 +83,20 @@ Set these in `deploy/.env`, then apply with `docker compose up -d`.
 | `KERNIC_WORKER_CPUS` | `2` | CPU limit of the compile worker. |
 | `KERNIC_WORKER_MEMORY` | `4g` | Memory limit of the compile worker. |
 | `KERNIC_COMPILE_TIMEOUT_MS` | `20000` | A compile is stopped after this time. |
+| `KERNIC_WARM_SESSIONS` | `2` | Projects whose compiler stays running between preview compiles. `0` turns this off. See below. |
+
+### Preview speed and memory
+
+While a project is being edited, the worker keeps its compiler running, so that the preview of a
+long document follows an edit in a few tenths of a second instead of compiling from the start
+each time. Such a compiler holds what it computed in memory: a few hundred megabytes for a
+document of 75 pages, and it is replaced once it holds more than 1 GB. It is stopped after ten
+minutes without edits, or earlier if more projects are being edited than `KERNIC_WARM_SESSIONS`
+allows; the project edited longest ago gives way.
+
+Plan about 1 GB of `KERNIC_WORKER_MEMORY` for each warm compiler, on top of 2 GB for everything
+else. On a small server, set `KERNIC_WARM_SESSIONS=1` or `0`. PDF export always compiles from
+the start.
 
 If you raise `KERNIC_MAX_PROJECT_MB` above 200, also raise `BODY_SIZE_LIMIT` of the app (set in
 `apps/web/Dockerfile`, default `256M`) by adding it under `app.environment` in `compose.yaml`;

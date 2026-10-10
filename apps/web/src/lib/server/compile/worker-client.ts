@@ -17,7 +17,12 @@ export interface Diagnostic {
 export interface WorkerArtifact {
 	name: string;
 	size: number;
-	data: string;
+	sha256: string;
+	/** Base64 content; null for a page listed in the request's `knownPages`. */
+	data: string | null;
+	/** Page size in points, for SVG pages. */
+	width?: number;
+	height?: number;
 }
 
 export interface WorkerResult {
@@ -27,6 +32,8 @@ export interface WorkerResult {
 	durationMs: number;
 	typstVersion: string;
 	timedOut: boolean;
+	/** Whether a compiler already running for the session produced the result. */
+	warm?: boolean;
 }
 
 /** The worker could not be reached or misbehaved; unrelated to the document. */
@@ -107,6 +114,13 @@ export async function compileSnapshot(request: {
 	root: string;
 	files: SnapshotFile[];
 	packages: PackageInput[];
+	/** Hashes of rendered pages already stored here, which the worker need not send again. */
+	knownPages?: string[];
+	/**
+	 * Names what is being edited. The worker may keep a compiler running per
+	 * name, which makes the compiles that follow much faster.
+	 */
+	session?: string;
 }): Promise<WorkerResult> {
 	const reference = (file: { path: string; sha256: string }) => ({
 		path: file.path,
@@ -121,7 +135,9 @@ export async function compileSnapshot(request: {
 			name,
 			version,
 			files: files.map(reference)
-		}))
+		})),
+		knownPages: request.knownPages ?? [],
+		session: request.session
 	});
 
 	// Where to read each blob from, should the worker ask for it.

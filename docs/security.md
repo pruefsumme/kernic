@@ -76,6 +76,18 @@ signed-in user's files, and everything fetched from outside (packages).
   otherwise. **Tested** with a stand-in compiler that tries to read the worker's cache and
   system files and to write into its sources: all denied under Landlock, all possible without
   it. Also checked inside the running container.
+- While a project is edited, its compiler stays running between preview compiles (`typst watch`,
+  at most two projects by default). Such a compiler runs under the same confinement and limits,
+  on its own copy of one project, and is ended with the worker. What it returns must equal a
+  compile from scratch, so the worker keeps strict control: the compiler is stopped while its
+  files are replaced, its messages are read while it is stopped, and if a compile started that
+  the worker did not ask for, or anything else is not as expected, the compiler is discarded
+  and the document is compiled from scratch. **Tested** in all three confinement modes: every
+  state in a series of edits (including errors, removed pages, files that appear, disappear or
+  turn into folders, packages added later, six simultaneous requests and forty random edits) is
+  compiled both ways and compared page by page and message by message; a killed compiler, a
+  compiler that was made to compile behind the worker's back, a compile over the time limit and
+  a compiler over its memory allowance are each handled. Also run in the Docker deployment.
 
 ### Uploads, archives, packages
 
@@ -155,6 +167,8 @@ signed-in user's files, and everything fetched from outside (packages).
     account page (changing the password requires the current one and signs every other session
     out), an administrators' page to invite, disable and reset accounts through single-use
     links, and an append-only activity log.
+14. Compiler messages such as "file not found" contained the directory a job ran in on the
+    server. They now name the file as it is called in the project.
 
 ## Open
 
@@ -183,8 +197,8 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Bibliography | Works (`bibliography()` with `.bib`; used by the Article template). |
 | Packages from Typst Universe | Work, including dependencies. Old package versions that do not support Typst 0.15 fail exactly as they do with the CLI. `@local` packages: not supported. |
 | Fonts | 276 families in the Docker image: Typst's embedded fonts plus Liberation, DejaVu, Noto, Inter, Roboto, Open Sans, Lato, TeX Gyre, Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond, Atkinson Hyperlegible, Fira Code and JetBrains Mono. Other fonts are uploaded into the project or added to the server. Not compared one by one with typst.app's selection. |
-| Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s to compile, 1.0 s to export. The preview loads only the pages in view and re-fetches only pages that changed. |
-| Preview | Server-rendered after each save (about a second behind typing for a long document). typst.app renders in the browser as you type. |
+| Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s for the first compile and for an export, 0.4 s for each following preview. The preview loads only the pages in view and re-fetches only pages that changed. |
+| Preview | Server-rendered after a pause in typing of 0.4 s; for the 74-page document the pages follow about 0.4 s later (measured, also in Docker). typst.app renders in the browser as you type, which is still faster. |
 | Editor assistance | Syntax highlighting and completion of built-in functions. No hover documentation, go-to-definition or formatting yet. |
 | Collaboration, comments, sharing links | Not available. |
 | PDF options (PDF/A, tagged PDF, page ranges) | Not exposed in the interface yet; the compiler supports them. |

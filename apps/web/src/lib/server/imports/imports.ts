@@ -226,7 +226,9 @@ async function dryRunCompile(
 		if (!result.ok) return { status: 'failed', diagnostics: result.diagnostics, unavailable };
 
 		const firstPage = result.artifacts[0];
-		if (firstPage) await fs.writeFile(previewPath(importId), Buffer.from(firstPage.data, 'base64'));
+		if (firstPage?.data) {
+			await fs.writeFile(previewPath(importId), Buffer.from(firstPage.data, 'base64'));
+		}
 		return {
 			status: 'ok',
 			pageCount: result.artifacts.length,

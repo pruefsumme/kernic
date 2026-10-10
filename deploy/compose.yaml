@@ -66,9 +66,14 @@ services:
     environment:
       KERNIC_WORKER_TOKEN: ${KERNIC_WORKER_TOKEN:?set KERNIC_WORKER_TOKEN in deploy/.env}
       KERNIC_COMPILE_TIMEOUT_MS: ${KERNIC_COMPILE_TIMEOUT_MS:-20000}
+      # Projects that keep a compiler running between preview compiles; 0 turns this off.
+      KERNIC_WARM_SESSIONS: ${KERNIC_WARM_SESSIONS:-2}
+      # Leaves room in /work for running jobs and the warm compilers' files.
+      KERNIC_BLOB_CACHE_MB: 384
     read_only: true
     tmpfs:
-      # Job files and the blob cache live in memory and vanish with the container.
+      # Job files, the blob cache and the warm compilers' copies of their projects
+      # live in memory and vanish with the container.
       - /work:uid=1000,gid=1000,mode=0700,size=1g
       - /tmp:size=64m
     cap_drop: [ALL]

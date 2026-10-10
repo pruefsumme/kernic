@@ -51,6 +51,23 @@ export function parseDiagnostics(stderr: string): Diagnostic[] {
 	return diagnostics;
 }
 
+/**
+ * Rewrites absolute paths in messages ("file not found (searched at …)") to
+ * what the author knows: paths within the project, and `@namespace/name/version`
+ * for packages. The directories a job happens to run in are of no use to them.
+ */
+export function hideJobPaths(
+	diagnostics: Diagnostic[],
+	view: { sourceDir: string; packageCacheDir: string }
+): Diagnostic[] {
+	return diagnostics.map((diagnostic) => ({
+		...diagnostic,
+		message: diagnostic.message
+			.replaceAll(`${view.sourceDir}/`, '')
+			.replaceAll(`${view.packageCacheDir}/`, '@')
+	}));
+}
+
 export function hasErrors(diagnostics: Diagnostic[]): boolean {
 	return diagnostics.some((diagnostic) => diagnostic.severity === 'error');
 }

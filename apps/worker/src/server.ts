@@ -11,6 +11,7 @@ import {
 import type { WorkerConfig } from './config.ts';
 import { isSha256 } from './paths.ts';
 import { detectToolchain, type Toolchain } from './sandbox.ts';
+import { WarmSessions } from './sessions.ts';
 
 const MAX_REQUEST_JSON_BYTES = 2 * 1024 * 1024;
 
@@ -70,6 +71,8 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 export interface Worker {
 	server: Server;
 	toolchain: Toolchain;
+	/** Stops the compilers that were kept running. Call it when the server closes. */
+	close: () => Promise<void>;
 }
 
 export async function createWorker(config: WorkerConfig): Promise<Worker> {
@@ -81,13 +84,25 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 	});
 	await blobs.open();
 
+	const sessions = new WarmSessions({
+		blobs,
+		toolchain,
+		sandbox: config.sandbox,
+		limits: config.limits,
+		warm: config.warm,
+		dir: path.join(config.workDir, 'sessions'),
+		packageDir: config.packageDir
+	});
+	await sessions.open();
+
 	const compiler = new Compiler({
 		blobs,
 		toolchain,
 		sandbox: config.sandbox,
 		limits: config.limits,
 		jobsDir: path.join(config.workDir, 'jobs'),
-		packageDir: config.packageDir
+		packageDir: config.packageDir,
+		sessions
 	});
 	await compiler.open();
 
@@ -166,5 +181,5 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 		});
 	});
 
-	return { server, toolchain };
+	return { server, toolchain, close: () => sessions.close() };
 }
