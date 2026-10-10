@@ -20,6 +20,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import BrandMark from './BrandMark.svelte';
 	import Icon from './Icon.svelte';
 	import Menu from './Menu.svelte';
@@ -30,7 +31,6 @@
 	 * panel attached to the rail, and the content area.
 	 */
 	let {
-		userName,
 		destinations,
 		footer = [],
 		menus,
@@ -40,7 +40,6 @@
 		children,
 		scroll = true
 	}: {
-		userName: string;
 		/** Core destinations, in the middle of the rail. */
 		destinations: RailItem[];
 		/** Less frequent destinations, at the bottom of the rail. */
@@ -57,6 +56,10 @@
 		/** Whether the content area scrolls as a page (dashboard) or manages its own panes (editor). */
 		scroll?: boolean;
 	} = $props();
+
+	// Every signed-in page has the user in its data (from the root layout).
+	const user = $derived(page.data.user as { displayName: string; isAdmin: boolean });
+	const userName = $derived(user?.displayName ?? '');
 </script>
 
 {#snippet railItem(item: RailItem)}
@@ -133,6 +136,13 @@
 					<span class="user-name">{userName}</span>
 					<Icon name="chevronDown" size={14} />
 				{/snippet}
+				<a role="menuitem" href="/account">Your account</a>
+				{#if user?.isAdmin}
+					<hr />
+					<a role="menuitem" href="/admin/users">People</a>
+					<a role="menuitem" href="/admin/activity">Activity log</a>
+				{/if}
+				<hr />
 				<form method="POST" action="/logout">
 					<button role="menuitem"><Icon name="signOut" size={16} /> Sign out</button>
 				</form>

@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { recordAudit } from '#lib/server/audit.ts';
 import { setSessionCookie } from '#lib/server/auth/cookies.ts';
 import { RateLimiter } from '#lib/server/auth/rate-limit.ts';
 import { createSession } from '#lib/server/auth/sessions.ts';
@@ -60,7 +61,8 @@ export const actions: Actions = {
 		}
 
 		markSetupComplete();
-		const session = await createSession(user.id);
+		await recordAudit(event, 'setup.completed', { actor: user });
+		const session = await createSession(user.id, event.request.headers.get('user-agent'));
 		setSessionCookie(event, session.token, session.expiresAt);
 		redirect(303, '/');
 	}

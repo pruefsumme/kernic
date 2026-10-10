@@ -84,3 +84,96 @@ export async function authenticate(email: string, password: string): Promise<Ses
 
 	return { id: row.id, email: row.email, displayName: row.display_name, isAdmin: row.is_admin };
 }
+
+export interface UserAccount {
+	id: string;
+	email: string;
+	displayName: string;
+	isAdmin: boolean;
+	createdAt: Date;
+	disabledAt: Date | null;
+	/** Most recent use of any of the user's sessions. */
+	lastSeenAt: Date | null;
+}
+
+export class WrongPasswordError extends Error {}
+export class LastAdminError extends Error {}
+
+export async function listUsers(): Promise<UserAccount[]> {
+	const rows = await sql<
+		{
+			id: string;
+			email: string;
+			display_name: string;
+			is_admin: boolean;
+			created_at: Date;
+			disabled_at: Date | null;
+			last_seen_at: Date | null;
+		}[]
+	>`
+		SELECT u.id, u.email, u.display_name, u.is_admin, u.created_at, u.disabled_at,
+			(SELECT max(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at
+		FROM users u
+		ORDER BY u.created_at
+	`;
+	return rows.map((row) => ({
+		id: row.id,
+		email: row.email,
+		displayName: row.display_name,
+		isAdmin: row.is_admin,
+		createdAt: row.created_at,
+		disabledAt: row.disabled_at,
+		lastSeenAt: row.last_seen_at
+	}));
+}
+
+export async function updateDisplayName(userId: string, displayName: string): Promise<void> {
+	await sql`UPDATE users SET display_name = ${displayName} WHERE id = ${userId}`;
+}
+
+/** Changes a password after checking the current one. */
+export async function changePassword(
+	userId: string,
+	currentPassword: string,
+	newPassword: string
+): Promise<void> {
+	const [row] = await sql<{ password_hash: string }[]>`
+		SELECT password_hash FROM users WHERE id = ${userId}
+	`;
+	if (!row || !(await verifyPassword(currentPassword, row.password_hash))) {
+		throw new WrongPasswordError();
+	}
+	await setPassword(userId, newPassword);
+}
+
+export async function setPassword(userId: string, newPassword: string): Promise<void> {
+	await sql`UPDATE users SET password_hash = ${await hashPassword(newPassword)} WHERE id = ${userId}`;
+}
+
+/**
+ * Disables or re-enables an account. A disabled account cannot sign in and its
+ * sessions end at once. The last enabled administrator cannot be disabled, or
+ * nobody could manage the installation any more.
+ */
+export async function setUserDisabled(userId: string, disabled: boolean): Promise<void> {
+	await sql.begin(async (tx) => {
+		if (disabled) {
+			const [target] = await tx<{ is_admin: boolean }[]>`
+				SELECT is_admin FROM users WHERE id = ${userId} FOR UPDATE
+			`;
+			if (target?.is_admin) {
+				const [others] = await tx<{ count: number }[]>`
+					SELECT count(*)::int AS count FROM users
+					WHERE is_admin AND disabled_at IS NULL AND id <> ${userId}
+				`;
+				if (others!.count === 0) throw new LastAdminError();
+			}
+			await tx`DELETE FROM sessions WHERE user_id = ${userId}`;
+		}
+		if (disabled) await tx`UPDATE users SET disabled_at = now() WHERE id = ${userId}`;
+		else await tx`UPDATE users SET disabled_at = NULL WHERE id = ${userId}`;
+	});
+}
+
+/** Used by invitations: creates the account inside the caller's transaction. */
+export const createUserIn = insertUserWithWorkspace;

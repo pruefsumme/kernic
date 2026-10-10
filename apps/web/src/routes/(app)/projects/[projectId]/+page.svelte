@@ -12,7 +12,6 @@
 <!-- A fresh editor per project: its session state must not leak between projects. -->
 {#key data.project.id}
 	<ProjectEditor
-		userName={data.user.displayName}
 		project={data.project}
 		canWrite={data.canWrite}
 		entries={data.entries}

@@ -20,13 +20,11 @@
 	import SourceEditor from './SourceEditor.svelte';
 
 	let {
-		userName,
 		project,
 		canWrite,
 		entries,
 		lastRender
 	}: {
-		userName: string;
 		project: { id: string; name: string; entryPath: string; revision: number };
 		canWrite: boolean;
 		entries: TreeEntry[];
@@ -209,7 +207,7 @@
 	}}
 />
 
-<AppShell {userName} {destinations} {footer} scroll={false}>
+<AppShell {destinations} {footer} scroll={false}>
 	{#snippet menus()}
 		<Menu>
 			{#snippet trigger()}File{/snippet}

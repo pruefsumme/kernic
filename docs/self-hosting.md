@@ -58,6 +58,14 @@ Open Kernic in a browser, enter the token and create the administrator account. 
 on every restart and stops working once an account exists. To choose the token yourself, set
 `KERNIC_SETUP_TOKEN` in `.env` before the first start.
 
+### Adding people
+
+There is no public sign-up. As an administrator, open the account menu (top right) → **People**,
+enter the person's email address and create an invitation link. Kernic does not send email: copy
+the link and pass it on yourself. With it the person chooses their own name and password; the
+link works once and expires after 7 days. The same page disables accounts and creates password
+reset links. **Activity log** in the same menu shows sign-ins and account changes.
+
 ## Configuration
 
 Set these in `deploy/.env`, then apply with `docker compose up -d`.
@@ -208,7 +216,8 @@ What the deployment does, and what it relies on you for.
   outside the Compose networks.
 - **Sessions.** Sign-in cookies are `HttpOnly` and `SameSite=Lax`, and marked `Secure` when Kernic
   is served over HTTPS. Requests that change data must come from Kernic's own origin.
-- **Accounts.** There is no public sign-up. Passwords are stored as salted scrypt hashes.
+- **Accounts.** There is no public sign-up; people are invited by link. Passwords are stored as
+  salted scrypt hashes.
 - **Your part.** Keep `deploy/.env` private, serve Kernic over HTTPS, keep Docker and the host
   updated, and keep backups somewhere else.
 

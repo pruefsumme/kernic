@@ -65,11 +65,7 @@
 	<title>Projects · Kernic</title>
 </svelte:head>
 
-<AppShell
-	userName={data.user.displayName}
-	destinations={[projectsDestination(true)]}
-	footer={[helpDestination]}
->
+<AppShell destinations={[projectsDestination(true)]} footer={[helpDestination]}>
 	{#snippet title()}
 		<span class="where">Projects</span>
 	{/snippet}

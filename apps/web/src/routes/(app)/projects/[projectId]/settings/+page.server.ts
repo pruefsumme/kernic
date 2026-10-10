@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { recordAudit } from '#lib/server/audit.ts';
 import { projectTreeDir } from '#lib/server/config.ts';
 import { requireProject } from '#lib/server/http.ts';
 import { InvalidPathError } from '#lib/server/projects/paths.ts';
@@ -69,6 +70,7 @@ export const actions: Actions = {
 			});
 		}
 		await deleteProject(project.id);
+		await recordAudit(event, 'project.deleted', { subject: project.name });
 		redirect(303, '/');
 	}
 };

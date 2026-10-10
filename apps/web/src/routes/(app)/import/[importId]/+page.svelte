@@ -52,11 +52,7 @@
 	<title>Import {pending.sourceName} · Kernic</title>
 </svelte:head>
 
-<AppShell
-	userName={data.user.displayName}
-	destinations={[projectsDestination(false)]}
-	footer={[helpDestination]}
->
+<AppShell destinations={[projectsDestination(false)]} footer={[helpDestination]}>
 	{#snippet title()}
 		<a class="crumb" href="/">Projects</a>
 		<span class="where">Import</span>

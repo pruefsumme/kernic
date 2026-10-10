@@ -1,4 +1,5 @@
 import { error, fail, isHttpError, redirect } from '@sveltejs/kit';
+import { recordAudit } from '#lib/server/audit.ts';
 import { recordInitialCheckpoint } from '#lib/server/history/history.ts';
 import { requireUser } from '#lib/server/http.ts';
 import { cancelImport, confirmImport, getImport } from '#lib/server/imports/imports.ts';
@@ -47,6 +48,7 @@ export const actions: Actions = {
 			`Imported from ${pending?.sourceName ?? 'a ZIP archive'}`,
 			user
 		);
+		await recordAudit(event, 'project.imported', { subject: project.name });
 		redirect(303, `/projects/${project.id}`);
 	},
 

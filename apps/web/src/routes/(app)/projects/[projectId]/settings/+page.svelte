@@ -18,7 +18,6 @@
 </svelte:head>
 
 <AppShell
-	userName={data.user.displayName}
 	destinations={[
 		projectsDestination(false),
 		{ id: 'editor', label: 'Editor', icon: 'files', href: editorUrl }

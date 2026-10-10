@@ -17,6 +17,13 @@ export function requireUser(event: RequestEvent): SessionUser {
 	return event.locals.user;
 }
 
+/** For pages only administrators may see. Others get "not found", as if the page did not exist. */
+export function requireAdmin(event: RequestEvent): SessionUser {
+	const user = requireUser(event);
+	if (!user.isAdmin) error(404, 'Not found');
+	return user;
+}
+
 /**
  * Loads the project named by the `projectId` route parameter and checks the
  * signed-in user's access to it. Every project route — pages, file downloads,

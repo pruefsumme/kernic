@@ -1,3 +1,4 @@
+import { recordAudit } from '#lib/server/audit.ts';
 import { authorOf, withHistory } from '#lib/server/history/history.ts';
 import { requireProject, throwAsHttpError } from '#lib/server/http.ts';
 import { bumpRevision } from '#lib/server/projects/projects.ts';
@@ -12,5 +13,8 @@ export const POST: RequestHandler = async (event) => {
 	const checkpoint = await withHistory(project.id, (history) =>
 		history.restore(event.params.checkpointId, authorOf(user))
 	).catch(throwAsHttpError);
+	await recordAudit(event, 'project.restored', {
+		subject: `${project.name}: ${checkpoint.message}`
+	});
 	return Response.json({ checkpoint, revision: await bumpRevision(project.id) });
 };

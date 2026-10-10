@@ -60,7 +60,8 @@ development, and `apps/web/src/env.ts` and `apps/worker/src/config.ts` describe 
 
 Working:
 
-- First-run setup with a setup token, sign in and sign out
+- First-run setup with a setup token, sign in and sign out; accounts by invitation link, an
+  account page (password, sessions), administration of people and an activity log
 - Projects from built-in templates (blank, article, report, letter)
 - Multi-file editor: file tree, uploads, rename, delete, Typst syntax highlighting and completion
 - Autosave with conflict detection: a file changed elsewhere is never overwritten silently
@@ -80,5 +81,5 @@ Not built yet:
 
 - Importing from a Git repository
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
-- Team workspaces in the UI, sharing and review
+- Sharing a workspace between several people, sharing links and review
 - Tinymist language server features, real-time collaboration

@@ -45,6 +45,16 @@ signed-in user's files, and everything fetched from outside (packages).
   use. Sign-out deletes the session (**tested**).
 - First-run setup needs a token from the server log; attempts are limited; setup closes for good
   once an account exists (**tested**).
+- Accounts are created by invitation: an administrator creates a single-use link (7 days) and
+  the person chooses their own name and password, so no password is ever known to an
+  administrator. Password resets work the same way (24 hours) and sign the account out
+  everywhere. Only hashes of the links are stored. **Tested:** a link works once; a disabled
+  account is signed out at once and cannot sign in; people who are not administrators get "not
+  found" on the administration pages and their actions.
+- Changing a password requires the current one, is rate-limited, and ends every other session.
+  Each person can see their sessions and end any of them. **Tested.**
+- Sign-ins (including failed ones), account changes, password changes, project deletions,
+  restores and imports are written to an append-only activity log that administrators can read.
 - Requests that change anything must carry Kernic's own `Origin` (**tested**, including a
   request with no `Origin` at all).
 
@@ -141,23 +151,24 @@ signed-in user's files, and everything fetched from outside (packages).
     before a round of edits (at most every ten minutes) and before every deletion, apart from
     the checkpoint history; a snapshot can be compared, restored and downloaded like a
     checkpoint.
+13. There was no way to change a password, see one's sessions, or add people. There is now an
+    account page (changing the password requires the current one and signs every other session
+    out), an administrators' page to invite, disable and reset accounts through single-use
+    links, and an append-only activity log.
 
 ## Open
 
 Ordered by how much they matter for someone writing a thesis here. The researched solution for
 each is in the [backlog](backlog.md).
 
-1. **No account self-service.** There is no page to change one's password or see and revoke
-   sessions, and no interface to create further accounts.
-2. **Package authenticity rests on HTTPS and first download.** The registry publishes no
+1. **Package authenticity rests on HTTPS and first download.** The registry publishes no
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
-3. **Single process.** Rate limits and the per-project lock live in memory; running several app
+2. **Single process.** Rate limits and the per-project lock live in memory; running several app
    instances is not supported.
-4. **No fairness in the compile queue.** One account can queue compiles for many projects.
-5. **No audit log** of sign-ins, access changes or deletions.
-6. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
+3. **No fairness in the compile queue.** One account can queue compiles for many projects.
+4. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
    between two released versions, power loss during a save.
-7. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
+5. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.
 
