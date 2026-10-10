@@ -1,3 +1,4 @@
+import type { PdfOptions } from '#lib/pdf-options.ts';
 import {
 	ApiError,
 	type CompileJob,
@@ -309,8 +310,11 @@ export class EditorSession {
 		if (job.revision !== null && job.revision < this.revision) this.#compileAgain = true;
 	}
 
-	/** Compiles a PDF from the saved project and returns its download URL. */
-	async exportPdf(): Promise<string | null> {
+	/**
+	 * Compiles a PDF from the saved project and returns its download URL, or
+	 * null with `exportError` saying what to do.
+	 */
+	async exportPdf(options?: PdfOptions): Promise<string | null> {
 		this.exportError = null;
 		if (!(await this.flush())) {
 			this.exportError = 'Save your changes first; the last save did not succeed.';
@@ -319,13 +323,19 @@ export class EditorSession {
 
 		this.exporting = true;
 		try {
-			const queued = await this.api.compile('pdf');
+			const queued = await this.api.compile('pdf', options);
 			const job = await this.api.waitForJob(queued.id, this.#abort.signal);
 			if (job.status === 'succeeded') return this.api.pdfUrl(job.id);
 
 			if (job.status === 'failed') {
 				this.diagnostics = job.diagnostics;
-				this.exportError = 'The document has errors. Fix them to export a PDF.';
+				// With a standard chosen, the usual cause is a rule of that standard,
+				// which the compiler explains in its first error.
+				const reason = job.diagnostics.find((diagnostic) => diagnostic.severity === 'error');
+				this.exportError =
+					options?.standard && reason
+						? `The PDF could not be exported: ${reason.message}`
+						: 'The document has errors. Fix them to export a PDF.';
 			} else {
 				this.exportError = job.error ?? 'The export did not finish.';
 			}

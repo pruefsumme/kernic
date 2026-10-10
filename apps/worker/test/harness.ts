@@ -79,6 +79,7 @@ export async function compile(
 		packages?: PackageSource[];
 		session?: string;
 		knownPages?: string[];
+		pdf?: unknown;
 	} = {}
 ) {
 	const snapshot = await uploadAll(harness, files);
@@ -95,7 +96,8 @@ export async function compile(
 			files: snapshot,
 			packages,
 			session: options.session,
-			knownPages: options.knownPages
+			knownPages: options.knownPages,
+			pdf: options.pdf
 		})
 	});
 	return { status: response.status, body: (await response.json()) as any };

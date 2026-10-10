@@ -12,6 +12,7 @@
 	import { createProjectApi, type Diagnostic, type TreeEntry } from './api.ts';
 	import { revealPosition, type Heading } from './codemirror.ts';
 	import FilesPanel from './FilesPanel.svelte';
+	import ExportDialog from './ExportDialog.svelte';
 	import { insertImages } from './formatting.ts';
 	import FormatToolbar from './FormatToolbar.svelte';
 	import HistoryPanel from './HistoryPanel.svelte';
@@ -279,6 +280,7 @@
 		}
 	]);
 	let quickOpen = $state(false);
+	let exportOptions = $state(false);
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 	const quickOpenKeys = isMac ? '⌘K' : 'Ctrl+K';
 
@@ -318,6 +320,13 @@
 				kind: 'Action',
 				icon: 'download',
 				run: () => void exportPdf()
+			},
+			{
+				id: 'export-options',
+				label: 'Export PDF with options (PDF/A, pages)',
+				kind: 'Action',
+				icon: 'download',
+				run: () => (exportOptions = true)
 			},
 			{
 				id: 'zip',
@@ -399,6 +408,13 @@
 	label="Go to a file or heading, or run an action"
 />
 
+<ExportDialog
+	bind:open={exportOptions}
+	{session}
+	projectId={project.id}
+	ondownload={(url) => location.assign(url)}
+/>
+
 <AppShell {destinations} {footer} scroll={false}>
 	{#snippet menus()}
 		<Menu>
@@ -408,6 +424,9 @@
 			</button>
 			<hr />
 			<button role="menuitem" disabled={session.exporting} onclick={exportPdf}>Export PDF</button>
+			<button role="menuitem" onclick={() => (exportOptions = true)}>
+				Export PDF with options…
+			</button>
 			<a role="menuitem" href={session.api.archiveUrl} download>Download all files (ZIP)</a>
 			<hr />
 			<a role="menuitem" href="/projects/{project.id}/settings">Project settings</a>
@@ -448,6 +467,9 @@
 			{/snippet}
 			<button role="menuitem" disabled={session.exporting} onclick={exportPdf}>
 				<Icon name="download" size={16} /> PDF
+			</button>
+			<button role="menuitem" onclick={() => (exportOptions = true)}>
+				<Icon name="settings" size={16} /> PDF with options…
 			</button>
 			<a role="menuitem" href={session.api.archiveUrl} download>
 				<Icon name="download" size={16} /> All files (ZIP)

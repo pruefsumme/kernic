@@ -1,5 +1,7 @@
 /** Browser-side client for the project API under /api/projects/:id. */
 
+import type { PdfOptions } from '#lib/pdf-options.ts';
+
 export interface TreeEntry {
 	path: string;
 	type: 'file' | 'directory';
@@ -203,9 +205,11 @@ export function createProjectApi(projectId: string) {
 			return (await request(`${base}/upload`, { method: 'POST', body: form })).json();
 		},
 
-		async compile(format: 'svg' | 'pdf'): Promise<CompileJob> {
+		async compile(format: 'svg' | 'pdf', options?: PdfOptions): Promise<CompileJob> {
 			return (
-				(await (await request(`${base}/compile`, json({ format }))).json()) as { job: CompileJob }
+				(await (await request(`${base}/compile`, json({ format, options }))).json()) as {
+					job: CompileJob;
+				}
 			).job;
 		},
 

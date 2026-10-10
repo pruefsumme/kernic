@@ -50,13 +50,7 @@ families in the editor (from `typst fonts`), complete them inside `font: "…"`,
 compiler's "unknown font family" warning into a message that says how to add the font. An
 optional image variant with Noto CJK (91 MB).
 
-### 3. PDF export options
-
-Expose what the compiler already supports: PDF standard (PDF/A variants, PDF/UA), page ranges
-and tagged PDF, in an export dialog. The worker accepts them as a fixed list of allowed values,
-never as free-form arguments.
-
-### 4. Fair compile queue, and readiness for more than one app process
+### 3. Fair compile queue, and readiness for more than one app process
 
 No broker needed for this; PostgreSQL covers it.
 
@@ -68,7 +62,7 @@ No broker needed for this; PostgreSQL covers it.
 - BullMQ with Redis stays an option for many workers; it is established, but it is a second
   service to run and back up, so only when a single worker is not enough.
 
-### 5. Package trust
+### 4. Package trust
 
 **Finding.** Typst Universe's index publishes no checksums (checked: the index has name,
 version, entrypoint, authors, licence and similar fields only), and the official CLI does not
@@ -83,7 +77,7 @@ verify any either. Authenticity rests on HTTPS to the registry.
   of the same version has a different hash (for example after a restore onto a new server).
 - Private packages: administrators upload a package archive into a `local` namespace.
 
-### 6. Checks not yet exercised
+### 5. Checks not yet exercised
 
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
@@ -94,23 +88,23 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 7. Git remotes (Gitea/Forgejo)
+### 6. Git remotes (Gitea/Forgejo)
 
 Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 8. Team access
+### 7. Team access
 
 Team workspaces in the interface, membership and roles, share links. Accounts and invitations
 exist; what is missing is putting several people into one workspace.
 
-### 9. Real-time collaboration
+### 8. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 10. Operations
+### 9. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -152,6 +146,8 @@ details.
   renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.
 - Account page (name, password, sessions), people management by invitation and reset links,
   activity log.
+- PDF export options: a standard (PDF/A variants, PDF/UA-1), a selection of pages, and
+  accessibility tags, checked against fixed lists in the app and again in the worker.
 - Quick open (Ctrl+K, or File → Go to file or heading): jump to a file or heading, or run an
   action, by typing a few letters.
 - Files can be dropped anywhere on the editor screen; images dropped or pasted into a Typst

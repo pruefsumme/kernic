@@ -68,6 +68,9 @@ signed-in user's files, and everything fetched from outside (packages).
   **Tested:** an endless computation, a 4 GB allocation, a 60-page document against a 20-page
   limit, and 179 MB of output against a 1 MB limit each fail with a specific message, and the
   worker serves the next request.
+- Export options become compiler arguments. Only a standard from a fixed list and a page
+  selection of digits, commas and hyphens are accepted, by the app and again by the worker.
+  **Tested** with option-like and shell-like values at both levels.
 - **Tested:** documents cannot read `/proc/self/environ`, `/etc/passwd` or anything else
   outside their project, by absolute path or by `..`.
 - Each compile is additionally confined to its own files: with `bubblewrap` in development,
@@ -201,5 +204,5 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Preview | Server-rendered after a pause in typing of 0.4 s; for the 74-page document the pages follow about 0.4 s later (measured, also in Docker). typst.app renders in the browser as you type, which is still faster. |
 | Editor assistance | Syntax highlighting and completion of built-in functions. No hover documentation, go-to-definition or formatting yet. |
 | Collaboration, comments, sharing links | Not available. |
-| PDF options (PDF/A, tagged PDF, page ranges) | Not exposed in the interface yet; the compiler supports them. |
+| PDF options | Export → "PDF with options": PDF/A-1b, 2b, 2a, 3b, 4 and PDF/UA-1, a selection of pages, and accessibility tags. A document that does not meet the chosen standard is refused with the compiler's reason. Whether a file passes an external validator such as veraPDF has not been checked. |
 | Version history | Explicit checkpoints with diff and restore, plus automatic snapshots at most every ten minutes. |

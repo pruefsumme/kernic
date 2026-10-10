@@ -215,6 +215,78 @@ describe('pages the caller already has', () => {
 	});
 });
 
+describe('PDF export options', () => {
+	let harness: Harness;
+	before(async () => {
+		harness = await startWorker();
+	});
+	after(() => harness.close());
+
+	const threePages = {
+		'main.typ': '#set document(title: "Three")\nOne\n#pagebreak()\nTwo\n#pagebreak()\nThree'
+	};
+	const pdfOf = (body: any) => Buffer.from(body.artifacts[0].data, 'base64').toString('latin1');
+	const pageCount = (pdf: string) => (pdf.match(/\/Type\s*\/Page\b/g) ?? []).length;
+
+	test('a standard is enforced and recorded in the file', async () => {
+		const plain = await compile(harness, threePages, { format: 'pdf' });
+		assert.doesNotMatch(pdfOf(plain.body), /pdfaid/);
+
+		const archival = await compile(harness, threePages, {
+			format: 'pdf',
+			pdf: { standard: 'a-2b' }
+		});
+		assert.equal(archival.body.ok, true, JSON.stringify(archival.body.diagnostics));
+		assert.match(pdfOf(archival.body), /pdfaid:part[^0-9]*2/);
+	});
+
+	test('a document that does not meet the standard fails with the reason', async () => {
+		const { body } = await compile(
+			harness,
+			{ 'main.typ': 'No title' },
+			{ format: 'pdf', pdf: { standard: 'ua-1' } }
+		);
+		assert.equal(body.ok, false);
+		assert.match(body.diagnostics[0].message, /PDF\/UA-1.*missing document title/);
+	});
+
+	test('only the selected pages are exported, without a warning', async () => {
+		const all = await compile(harness, threePages, { format: 'pdf', pdf: { tagged: false } });
+		assert.equal(pageCount(pdfOf(all.body)), 3);
+
+		const some = await compile(harness, threePages, { format: 'pdf', pdf: { pages: '1,3-' } });
+		assert.equal(some.body.ok, true, JSON.stringify(some.body.diagnostics));
+		assert.deepEqual(some.body.diagnostics, []);
+		assert.equal(pageCount(pdfOf(some.body)), 2);
+	});
+
+	test('rejects anything that is not a listed standard or a plain page selection', async () => {
+		const bad = [
+			{ standard: 'a-2b --root /' },
+			{ standard: '--help' },
+			{ standard: 7 },
+			{ pages: '1; rm -rf' },
+			{ pages: '--root=/' },
+			{ pages: '0' },
+			{ pages: '3-1' },
+			{ pages: '-2' },
+			{ pages: '1, 2' },
+			{ pages: '' },
+			{ tagged: 'no' },
+			'a-2b'
+		];
+		for (const pdf of bad) {
+			const { status } = await compile(harness, threePages, { format: 'pdf', pdf });
+			assert.equal(status, 400, `expected ${JSON.stringify(pdf)} to be rejected`);
+		}
+		const preview = await compile(harness, threePages, {
+			format: 'svg',
+			pdf: { standard: 'a-2b' }
+		});
+		assert.equal(preview.status, 400, 'options only apply to a PDF export');
+	});
+});
+
 describe('packages', () => {
 	let harness: Harness;
 	before(async () => {

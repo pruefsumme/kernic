@@ -7,6 +7,7 @@ import type { BlobStore } from './blobs.ts';
 import type { CompileLimits, SandboxMode } from './config.ts';
 import { hasErrors, hideJobPaths, parseDiagnostics, type Diagnostic } from './diagnostics.ts';
 import { isSafeRelativePath, isSha256 } from './paths.ts';
+import { parsePdfOptions, type PdfOptions } from './pdf-options.ts';
 import { buildCompileCommand, compilerView, type JobPaths, type Toolchain } from './sandbox.ts';
 import type { WarmSessions } from './sessions.ts';
 
@@ -42,6 +43,8 @@ export interface CompileRequest {
 	 * them, which makes each following compile much faster.
 	 */
 	session: string | null;
+	/** Options for a PDF export; null for the compiler's defaults. */
+	pdf: PdfOptions | null;
 }
 
 export interface CompileResult {
@@ -124,7 +127,10 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 	if (typeof body !== 'object' || body === null) {
 		throw new InvalidRequestError('request body must be a JSON object');
 	}
-	const { entry, format, files, packages, knownPages, session } = body as Record<string, unknown>;
+	const { entry, format, files, packages, knownPages, session, pdf } = body as Record<
+		string,
+		unknown
+	>;
 
 	if (format !== 'svg' && format !== 'pdf') {
 		throw new InvalidRequestError('format must be "svg" or "pdf"');
@@ -147,9 +153,17 @@ export function parseCompileRequest(body: unknown, limits: CompileLimits): Compi
 	if (session !== undefined && !(typeof session === 'string' && SESSION_NAME.test(session))) {
 		throw new InvalidRequestError('session must be a short name of letters, digits, - and _');
 	}
+	let pdfOptions: PdfOptions | null = null;
+	if (pdf !== undefined && pdf !== null) {
+		if (format !== 'pdf') throw new InvalidRequestError('pdf options need format "pdf"');
+		const parsed = parsePdfOptions(pdf);
+		if (typeof parsed === 'string') throw new InvalidRequestError(parsed);
+		pdfOptions = parsed;
+	}
 	return {
 		entry,
 		format,
+		pdf: pdfOptions,
 		files: snapshot,
 		packages: packageFiles,
 		knownPages: new Set((knownPages as string[] | undefined) ?? []),
@@ -333,7 +347,9 @@ export class Compiler {
 			request.format,
 			request.entry,
 			paths,
-			this.#limits
+			this.#limits,
+			'compile',
+			request.pdf
 		);
 
 		const startedAt = performance.now();

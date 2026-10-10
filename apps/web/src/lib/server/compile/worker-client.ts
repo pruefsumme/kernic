@@ -2,6 +2,7 @@ import { KERNIC_WORKER_TOKEN, KERNIC_WORKER_URL } from '$app/env/private';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { PdfOptions } from '../../pdf-options';
 import type { SnapshotFile } from './snapshot';
 
 export type OutputFormat = 'svg' | 'pdf';
@@ -121,6 +122,8 @@ export async function compileSnapshot(request: {
 	 * name, which makes the compiles that follow much faster.
 	 */
 	session?: string;
+	/** Options of a PDF export. */
+	pdf?: PdfOptions | null;
 }): Promise<WorkerResult> {
 	const reference = (file: { path: string; sha256: string }) => ({
 		path: file.path,
@@ -137,7 +140,8 @@ export async function compileSnapshot(request: {
 			files: files.map(reference)
 		})),
 		knownPages: request.knownPages ?? [],
-		session: request.session
+		session: request.session,
+		pdf: request.pdf ?? undefined
 	});
 
 	// Where to read each blob from, should the worker ask for it.

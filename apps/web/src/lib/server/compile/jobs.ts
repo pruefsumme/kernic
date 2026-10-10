@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { projectArtifactsDir, projectTreeDir } from '../config';
 import { sql } from '../db/client';
+import type { PdfOptions } from '../../pdf-options';
 import { isUuid } from '../projects/projects';
 import { compileProject } from './compile-project';
 import {
@@ -27,6 +28,8 @@ export interface CompileJob {
 	id: string;
 	projectId: string;
 	format: OutputFormat;
+	/** Options of a PDF export; null for a preview or an export with defaults. */
+	options: PdfOptions | null;
 	status: JobStatus;
 	/** Project revision the snapshot was taken at. */
 	revision: number | null;
@@ -55,6 +58,7 @@ interface JobRow {
 	id: string;
 	project_id: string;
 	format: OutputFormat;
+	options: PdfOptions | null;
 	status: JobStatus;
 	revision: number | null;
 	source_hash: string | null;
@@ -73,6 +77,7 @@ function toJob(row: JobRow): CompileJob {
 		id: row.id,
 		projectId: row.project_id,
 		format: row.format,
+		options: row.options,
 		status: row.status,
 		revision: row.revision,
 		sourceHash: row.source_hash,
@@ -104,18 +109,21 @@ let running = 0;
 let started = false;
 
 /**
- * Queues a compile of the project's current files. Preview requests coalesce:
- * a job that has not started yet will pick up the latest files anyway, so it is
- * returned instead of queueing another.
+ * Queues a compile of the project's current files. Requests coalesce: a job
+ * for the same output that has not started yet will pick up the latest files
+ * anyway, so it is returned instead of queueing another.
  */
 export async function requestCompile(input: {
 	projectId: string;
 	userId: string;
 	format: OutputFormat;
+	options?: PdfOptions | null;
 }): Promise<CompileJob> {
+	const options = input.options ? sql.json(input.options as never) : null;
 	const [pending] = await sql<JobRow[]>`
 		SELECT * FROM compile_jobs
 		WHERE project_id = ${input.projectId} AND format = ${input.format} AND status = 'queued'
+			AND options IS NOT DISTINCT FROM ${options}::jsonb
 		ORDER BY created_at
 		LIMIT 1
 	`;
@@ -125,8 +133,8 @@ export async function requestCompile(input: {
 	}
 
 	const [row] = await sql<JobRow[]>`
-		INSERT INTO compile_jobs (project_id, requested_by, format, status)
-		VALUES (${input.projectId}, ${input.userId}, ${input.format}, 'queued')
+		INSERT INTO compile_jobs (project_id, requested_by, format, status, options)
+		VALUES (${input.projectId}, ${input.userId}, ${input.format}, 'queued', ${options})
 		RETURNING *
 	`;
 	dispatch();
@@ -301,7 +309,8 @@ async function runJob(job: CompileJob): Promise<void> {
 	const session = job.format === 'svg' ? job.projectId : undefined;
 	let compiled = await compileProject(root, project.entry_path, job.format, {
 		knownPages,
-		session
+		session,
+		pdf: job.options
 	});
 
 	let pages: RenderedPage[] | null = null;

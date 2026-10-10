@@ -247,7 +247,7 @@ test('export produces a PDF and a ZIP of the project', async ({ page }) => {
 	await page.getByRole('button', { name: 'Export' }).click();
 	const [pdf] = await Promise.all([
 		page.waitForEvent('download'),
-		page.getByRole('menuitem', { name: 'PDF' }).click()
+		page.getByRole('menuitem', { name: 'PDF', exact: true }).click()
 	]);
 	expect(pdf.suggestedFilename()).toBe('Export me.pdf');
 	const pdfStream = await pdf.createReadStream();
@@ -262,6 +262,64 @@ test('export produces a PDF and a ZIP of the project', async ({ page }) => {
 	const zipStream = await zip.createReadStream();
 	const zipHead = await new Promise<Buffer>((resolve) => zipStream.once('data', resolve));
 	expect(zipHead.subarray(0, 2).toString()).toBe('PK');
+});
+
+test('a PDF can be exported to a standard and for selected pages', async ({ page }) => {
+	await createProject(page, 'Report', 'Options');
+	await expect(pages(page)).toHaveCount(4);
+	const dialog = page.getByRole('dialog', { name: 'Export PDF' });
+	const openDialog = async () => {
+		await page.getByRole('banner').getByRole('button', { name: 'Export' }).click();
+		await page.getByRole('menuitem', { name: 'PDF with options…' }).click();
+		await expect(dialog).toBeVisible();
+	};
+	const download = async () => {
+		const [file] = await Promise.all([
+			page.waitForEvent('download'),
+			dialog.getByRole('button', { name: 'Export PDF' }).click()
+		]);
+		const chunks: Buffer[] = [];
+		for await (const chunk of await file.createReadStream()) chunks.push(chunk as Buffer);
+		return Buffer.concat(chunks).toString('latin1');
+	};
+
+	// An archival standard is written into the file.
+	await openDialog();
+	await expect(dialog.getByText('The document has 4 pages.')).toBeVisible();
+	await dialog.getByLabel('Standard').selectOption('a-2b');
+	const archival = await download();
+	expect(archival.slice(0, 5)).toBe('%PDF-');
+	expect(archival).toMatch(/pdfaid:part[^0-9]*2/);
+	await expect(dialog).toBeHidden();
+
+	// The choice is remembered; a page selection exports only those pages.
+	await openDialog();
+	await expect(dialog.getByLabel('Standard')).toHaveValue('a-2b');
+	await dialog.getByLabel('Standard').selectOption('');
+	await dialog.getByLabel('Pages', { exact: true }).fill('2, 4-');
+	await expect(dialog.getByRole('checkbox', { name: /Accessibility tags/ })).toBeDisabled();
+	const partial = await download();
+	expect(partial.match(/\/Type\s*\/Page\b/g)).toHaveLength(2);
+
+	// Mistakes are explained in the dialog and nothing is exported.
+	await openDialog();
+	await dialog.getByLabel('Pages', { exact: true }).fill('3-1');
+	await dialog.getByRole('button', { name: 'Export PDF' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('ends before it starts');
+	await dialog.getByLabel('Pages', { exact: true }).fill('9');
+	await dialog.getByRole('button', { name: 'Export PDF' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('The document has 4 pages');
+
+	// A document that does not meet the chosen standard is refused with the reason:
+	// the blank template sets no document title, which PDF/UA requires.
+	await createProject(page, 'Blank document', 'No title');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	await openDialog();
+	await dialog.getByLabel('Standard').selectOption('ua-1');
+	await expect(dialog.getByLabel('Pages', { exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'Export PDF' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('PDF/UA-1');
+	await expect(dialog).toBeVisible();
 });
 
 test('zoom changes the size of the rendered pages', async ({ page }) => {

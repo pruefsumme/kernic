@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { scanTypstSource } from '../imports/scan';
+import type { PdfOptions } from '../../pdf-options';
 import { resolvePackages, type PackageFailure } from '../packages/registry';
 import { snapshotTree, type Snapshot } from './snapshot';
 import {
@@ -95,6 +96,8 @@ export interface CompileOptions {
 	knownPages?: string[];
 	/** Lets the worker keep a compiler running for what is being edited, here a project. */
 	session?: string;
+	/** Options of a PDF export. */
+	pdf?: PdfOptions | null;
 }
 
 export async function compileProject(

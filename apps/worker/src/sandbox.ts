@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync, lstatSync, readlinkSync, realpathSyn
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { CompileLimits, SandboxMode } from './config.ts';
+import { pdfArguments, type PdfOptions } from './pdf-options.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -163,7 +164,8 @@ function typstArgs(
 	format: 'svg' | 'pdf',
 	entry: string,
 	paths: JobPaths,
-	limits: CompileLimits
+	limits: CompileLimits,
+	pdf: PdfOptions | null
 ): string[] {
 	const output =
 		format === 'svg'
@@ -187,6 +189,7 @@ function typstArgs(
 		format
 	];
 	if (paths.packageDir) args.push('--package-path', paths.packageDir);
+	if (format === 'pdf' && pdf) args.push(...pdfArguments(pdf));
 	if (mode === 'watch') {
 		// Written last in every compile, which tells the worker that one has finished.
 		args.push('--deps', path.join(paths.outputDir, DEPENDENCIES_FILE), '--deps-format', 'json');
@@ -244,7 +247,8 @@ export function buildCompileCommand(
 	entry: string,
 	paths: JobPaths,
 	limits: CompileLimits,
-	mode: CompilerMode = 'compile'
+	mode: CompilerMode = 'compile',
+	pdf: PdfOptions | null = null
 ): Command {
 	const limitsPrefix = [...rlimitArgs(limits, mode), '--'];
 	// A long-lived compiler must not outlive a worker that crashed. bubblewrap
@@ -262,7 +266,7 @@ export function buildCompileCommand(
 				...limitsPrefix,
 				...wrapper,
 				toolchain.typstPath,
-				...typstArgs(mode, format, entry, paths, limits)
+				...typstArgs(mode, format, entry, paths, limits, pdf)
 			],
 			cwd: paths.sourceDir,
 			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
@@ -298,7 +302,7 @@ export function buildCompileCommand(
 				...rules,
 				'--',
 				toolchain.typstPath,
-				...typstArgs(mode, format, entry, paths, limits)
+				...typstArgs(mode, format, entry, paths, limits, pdf)
 			],
 			cwd: paths.sourceDir,
 			env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: paths.packageCacheDir }
@@ -354,7 +358,7 @@ export function buildCompileCommand(
 			...limitsPrefix,
 			toolchain.bwrapPath,
 			...bwrapArgs,
-			...typstArgs(mode, format, entry, inside, limits)
+			...typstArgs(mode, format, entry, inside, limits, pdf)
 		],
 		cwd: paths.sourceDir,
 		env: {}

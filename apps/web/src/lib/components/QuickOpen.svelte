@@ -38,7 +38,10 @@
 	let query = $state('');
 	let active = $state(0);
 
-	const matches = $derived(rank(query, items, (item) => item.label).slice(0, MAX_SHOWN));
+	// Nothing is matched or rendered while the palette is closed.
+	const matches = $derived(
+		open ? rank(query, items, (item) => item.label).slice(0, MAX_SHOWN) : []
+	);
 
 	$effect(() => {
 		if (open && !dialog.open) {
@@ -101,7 +104,7 @@
 		<kbd>Esc</kbd>
 	</div>
 
-	{#if matches.length === 0}
+	{#if open && matches.length === 0}
 		<p class="empty" role="status">Nothing matches “{query.trim()}”. Try fewer letters.</p>
 	{/if}
 	<ul
