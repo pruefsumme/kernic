@@ -7,6 +7,7 @@ import {
 	readSessionCookie,
 	setSessionCookie
 } from '#lib/server/auth/cookies.ts';
+import { APPEARANCE_COOKIE, parseAppearance } from '#lib/appearance.ts';
 import { deleteExpiredSessions, validateSession } from '#lib/server/auth/sessions.ts';
 import { isSetupComplete, prepareSetup } from '#lib/server/auth/setup.ts';
 import { startJobDispatcher } from '#lib/server/compile/jobs.ts';
@@ -70,7 +71,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (setupComplete && onSetupPage) redirect(303, '/login');
 	}
 
-	const response = await resolve(event);
+	// The look chosen in this browser is part of the page from its first byte.
+	const look = parseAppearance(event.cookies.get(APPEARANCE_COOKIE));
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) =>
+			html
+				.replace('%kernic.theme%', look.theme)
+				.replace('%kernic.pages%', look.pages)
+				.replace('%kernic.hue%', String(look.hue))
+	});
 	response.headers.set('x-content-type-options', 'nosniff');
 	response.headers.set('referrer-policy', 'same-origin');
 	response.headers.set('x-frame-options', 'DENY');

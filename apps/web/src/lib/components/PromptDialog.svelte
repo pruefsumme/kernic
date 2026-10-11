@@ -103,7 +103,7 @@
 	}
 
 	dialog::backdrop {
-		background: oklch(23% 0.02 250 / 0.35);
+		background: var(--scrim);
 	}
 
 	form {

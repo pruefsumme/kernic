@@ -143,6 +143,7 @@
 					<Icon name="chevronDown" size={14} />
 				{/snippet}
 				<a role="menuitem" href="/account">Your account</a>
+				<a role="menuitem" href="/account#appearance">Appearance</a>
 				{#if user?.isAdmin}
 					<hr />
 					<a role="menuitem" href="/admin/users">People</a>
@@ -326,7 +327,7 @@
 		border: 1px solid var(--control-border);
 		border-radius: 50%;
 		background: var(--surface);
-		box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+		box-shadow: var(--shadow-edge);
 		transition:
 			border-color var(--fast) var(--ease-out),
 			scale var(--fast) var(--ease-out);
@@ -348,7 +349,7 @@
 		padding: 0 0.25rem;
 		border-radius: 1rem;
 		background: var(--error);
-		color: oklch(99% 0 0);
+		color: var(--on-error);
 		font-size: 0.6875rem;
 		font-weight: 600;
 		line-height: 1.05rem;

@@ -54,6 +54,32 @@ test('edits typed just before leaving the editor are not lost', async ({ page })
 	await expect(page.locator('.cm-content')).toContainText('Last words before leaving.');
 });
 
+test('selected text stays visible on the highlighted line', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Selection');
+	await appendSource(page, '\nA line that will be selected.');
+	await page.keyboard.press('Home');
+	await page.keyboard.press('Shift+End');
+	await expect(page.locator('.cm-selectionBackground').first()).toBeAttached();
+
+	const colours = await page.evaluate(() => {
+		const style = (selector: string) =>
+			getComputedStyle(document.querySelector(selector)!).backgroundColor;
+		return {
+			line: style('.cm-activeLine'),
+			selection: style('.cm-selectionBackground'),
+			surface: getComputedStyle(document.querySelector('.cm-editor')!).backgroundColor
+		};
+	});
+	// The line's highlight lets what is beneath it show through …
+	const alpha = Number(
+		/\/\s*([\d.]+)\)$/.exec(colours.line)?.[1] ?? /,\s*([\d.]+)\)$/.exec(colours.line)?.[1] ?? 1
+	);
+	expect(alpha, `highlight ${colours.line}`).toBeLessThan(0.2);
+	// … and the selection is a colour of its own.
+	expect(colours.selection).not.toBe(colours.surface);
+	expect(colours.selection).not.toBe('rgba(0, 0, 0, 0)');
+});
+
 test('a compile error is reported, located and cleared when fixed', async ({ page }) => {
 	await createProject(page, 'Blank document', 'Errors');
 	await expect(previewStatus(page)).toContainText('Up to date');

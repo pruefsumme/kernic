@@ -101,16 +101,28 @@ const theme = EditorView.theme({
 	'.cm-lineNumbers .cm-gutterElement': {
 		padding: '0 0.5rem 0 0.75rem',
 		minWidth: '2.5rem',
-		color: 'oklch(62% 0.012 250)'
+		color: 'var(--line-number)'
 	},
-	'.cm-activeLine': { backgroundColor: 'oklch(97% 0.006 255)' },
+	// A veil rather than a fill: the selection is drawn beneath the lines and has to show through.
+	'.cm-activeLine': { backgroundColor: 'var(--line-highlight)' },
 	'.cm-lineNumbers .cm-activeLineGutter': { color: 'var(--ink)' },
-	'.cm-activeLineGutter': { backgroundColor: 'oklch(97% 0.006 255)' },
+	'.cm-activeLineGutter': { backgroundColor: 'var(--line-highlight)' },
 	'&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground':
-		{ backgroundColor: 'var(--accent-soft)' },
+		{ backgroundColor: 'var(--selection)' },
 	'.cm-cursor': { borderLeftColor: 'var(--ink)', borderLeftWidth: '1.5px' },
 	'.cm-matchingBracket': { backgroundColor: 'var(--accent-soft)', outline: 'none' },
-	'.cm-selectionMatch': { backgroundColor: 'oklch(93% 0.03 95)' },
+	'.cm-selectionMatch': { backgroundColor: 'var(--selection-match)' },
+	'.cm-searchMatch': {
+		backgroundColor: 'var(--selection-match)',
+		outline: '1px solid var(--control-border)'
+	},
+	'.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'var(--selection)' },
+	'.cm-foldPlaceholder': {
+		border: '1px solid var(--rule)',
+		backgroundColor: 'var(--sunken)',
+		color: 'var(--ink-2)'
+	},
+	'.cm-completionDetail': { color: 'inherit', opacity: '0.75' },
 	'.cm-foldGutter .cm-gutterElement': { color: 'var(--ink-3)', cursor: 'pointer' },
 	'.cm-tooltip': {
 		border: '1px solid var(--rule)',
@@ -168,6 +180,7 @@ const theme = EditorView.theme({
 		border: '1px solid var(--control-border)',
 		borderRadius: 'var(--radius)',
 		backgroundColor: 'var(--surface)',
+		color: 'var(--ink)',
 		fontSize: 'var(--t-ui)'
 	},
 	'.cm-button': {
@@ -175,8 +188,10 @@ const theme = EditorView.theme({
 		borderRadius: 'var(--radius)',
 		backgroundImage: 'none',
 		backgroundColor: 'var(--surface)',
+		color: 'var(--ink)',
 		fontSize: 'var(--t-ui)'
-	}
+	},
+	'.cm-button:active': { backgroundImage: 'none', backgroundColor: 'var(--sunken)' }
 });
 
 /** Replaces the compiler diagnostics shown in the editor. */

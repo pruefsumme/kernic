@@ -1,58 +1,88 @@
 /*
  * Kernic design tokens and base elements.
  *
- * A quiet light theme: pale neutral chrome (rail and top bar), white content
- * surfaces, and the rendered page as the visual focus. One accent — a deep
- * printing blue — marks the primary action, the active destination and focus.
- * Red and ochre appear only where an error or warning is reported.
+ * Quiet chrome (rail and top bar), calm content surfaces, and the rendered
+ * page as the visual focus. One accent marks the primary action, the active
+ * destination and focus; its hue can be chosen. Red and ochre appear only
+ * where an error or warning is reported.
+ *
+ * Every colour is defined once for both themes with `light-dark()`. Which one
+ * applies follows the system unless `data-theme` on the root says otherwise.
+ * The rendered document itself is paper and stays white in either theme.
  */
 
 :root {
-	color-scheme: light;
+	color-scheme: light dark;
+	/* Hue of the accent, 0 to 360. The default is a deep printing blue. */
+	--accent-h: 264;
 
 	/* Surfaces */
-	--ground: oklch(97.4% 0.004 255); /* app chrome: rail and top bar */
-	--surface: oklch(100% 0 0); /* content, editor, inputs, floating panels */
-	--sunken: oklch(95% 0.006 255); /* hovered rows, wells */
-	--desk: oklch(93% 0.006 255); /* canvas behind the rendered pages */
+	--ground: light-dark(oklch(97.4% 0.004 255), oklch(20% 0.012 255)); /* app chrome */
+	--surface: light-dark(oklch(100% 0 0), oklch(23.5% 0.012 255)); /* content, editor, inputs */
+	--sunken: light-dark(oklch(95% 0.006 255), oklch(28.5% 0.014 255)); /* hovered rows, wells */
+	--desk: light-dark(oklch(93% 0.006 255), oklch(16% 0.01 255)); /* behind the rendered pages */
+	--paper: oklch(100% 0 0); /* a rendered page */
+	--scrim: light-dark(oklch(23% 0.02 250 / 0.35), oklch(8% 0.01 250 / 0.6)); /* behind dialogs */
 
 	/* Ink */
-	--ink: oklch(23% 0.02 250);
-	--ink-2: oklch(43% 0.018 250);
-	--ink-3: oklch(53% 0.015 250);
-	--rule: oklch(89% 0.006 240);
-	--control-border: oklch(64% 0.012 245);
+	--ink: light-dark(oklch(23% 0.02 250), oklch(93% 0.008 250));
+	--ink-2: light-dark(oklch(43% 0.018 250), oklch(77% 0.012 250));
+	--ink-3: light-dark(oklch(53% 0.015 250), oklch(67% 0.012 250));
+	--rule: light-dark(oklch(89% 0.006 240), oklch(32% 0.012 250));
+	--control-border: light-dark(oklch(64% 0.012 245), oklch(53% 0.014 250));
 
-	/* Accent: a deep printing blue. One job — primary action, active state, focus. */
-	--accent: oklch(44% 0.15 264);
-	--accent-hover: oklch(38% 0.15 264);
-	--accent-ink: oklch(99% 0 0);
-	--accent-soft: oklch(94% 0.03 264);
-	--focus: oklch(55% 0.17 264);
+	/* Accent. One job: primary action, active state, focus. */
+	--accent: light-dark(oklch(44% 0.15 var(--accent-h)), oklch(76% 0.12 var(--accent-h)));
+	--accent-hover: light-dark(oklch(38% 0.15 var(--accent-h)), oklch(82% 0.11 var(--accent-h)));
+	--accent-ink: light-dark(oklch(99% 0 0), oklch(19% 0.03 var(--accent-h)));
+	--accent-soft: light-dark(oklch(94% 0.03 var(--accent-h)), oklch(31% 0.055 var(--accent-h)));
+	--focus: light-dark(oklch(55% 0.17 var(--accent-h)), oklch(74% 0.14 var(--accent-h)));
+	--focus-ring: light-dark(
+		oklch(55% 0.17 var(--accent-h) / 0.22),
+		oklch(74% 0.14 var(--accent-h) / 0.3)
+	);
 
 	/* State: only where state lives. */
-	--error: oklch(49% 0.19 12);
-	--error-soft: oklch(96% 0.022 12);
-	--warning: oklch(48% 0.1 75);
-	--warning-soft: oklch(96% 0.045 90);
+	--error: light-dark(oklch(49% 0.19 12), oklch(74% 0.15 15));
+	--error-soft: light-dark(oklch(96% 0.022 12), oklch(29% 0.06 15));
+	--on-error: light-dark(oklch(99% 0 0), oklch(18% 0.03 15));
+	--warning: light-dark(oklch(48% 0.1 75), oklch(80% 0.11 82));
+	--warning-soft: light-dark(oklch(96% 0.045 90), oklch(30% 0.045 85));
+	--added-soft: light-dark(oklch(95% 0.045 150), oklch(30% 0.055 150));
 
-	/* Source highlighting: muted inks that stay readable on white (all >= 4.5:1). */
-	--syn-comment: oklch(52% 0.012 250);
-	--syn-keyword: oklch(44% 0.15 264);
-	--syn-function: oklch(43% 0.1 205);
-	--syn-string: oklch(42% 0.1 150);
-	--syn-number: oklch(46% 0.14 45);
-	--syn-reference: oklch(45% 0.14 330);
-	--syn-markup: oklch(40% 0.02 250);
+	/* The source editor. A selection has to stay visible on the highlighted line,
+	   so that highlight is a veil over whatever lies beneath it. */
+	--selection: light-dark(oklch(85% 0.075 var(--accent-h)), oklch(43% 0.1 var(--accent-h)));
+	--selection-match: light-dark(oklch(91% 0.06 95), oklch(38% 0.05 95));
+	--line-highlight: light-dark(oklch(45% 0.03 255 / 0.055), oklch(95% 0.02 255 / 0.06));
+	--line-number: light-dark(oklch(62% 0.012 250), oklch(56% 0.012 250));
 
+	/* Source highlighting: muted inks, readable on the editor surface (all >= 4.5:1). */
+	--syn-comment: light-dark(oklch(52% 0.012 250), oklch(65% 0.012 250));
+	--syn-keyword: light-dark(oklch(44% 0.15 264), oklch(78% 0.11 264));
+	--syn-function: light-dark(oklch(43% 0.1 205), oklch(80% 0.09 205));
+	--syn-string: light-dark(oklch(42% 0.1 150), oklch(80% 0.11 150));
+	--syn-number: light-dark(oklch(46% 0.14 45), oklch(80% 0.11 60));
+	--syn-reference: light-dark(oklch(45% 0.14 330), oklch(80% 0.11 330));
+	--syn-markup: light-dark(oklch(40% 0.02 250), oklch(84% 0.012 250));
+
+	--scrollbar: light-dark(oklch(80% 0.01 250), oklch(40% 0.012 250));
+
+	/* Shadows are ink in the light theme and plain darkness in the dark one. */
+	--shade: light-dark(oklch(20% 0.02 250), oklch(0% 0 0));
+	--shadow-edge: 0 1px 0 color-mix(in oklch, var(--shade) 5%, transparent);
 	--shadow-float:
-		0 0 0 1px oklch(20% 0.02 250 / 0.04), 0 2px 4px oklch(20% 0.02 250 / 0.06),
-		0 12px 32px oklch(20% 0.02 250 / 0.14);
+		0 0 0 1px light-dark(oklch(20% 0.02 250 / 0.04), oklch(100% 0 0 / 0.08)),
+		0 2px 4px color-mix(in oklch, var(--shade) 8%, transparent),
+		0 12px 32px light-dark(oklch(20% 0.02 250 / 0.14), oklch(0% 0 0 / 0.5));
 	/* A sheet of paper lying on the desk, and the same sheet picked up. */
-	--shadow-sheet: 0 0 0 1px oklch(20% 0.02 250 / 0.08), 0 1px 2px oklch(20% 0.02 250 / 0.08);
+	--shadow-sheet:
+		0 0 0 1px color-mix(in oklch, var(--shade) 8%, transparent),
+		0 1px 2px color-mix(in oklch, var(--shade) 8%, transparent);
 	--shadow-sheet-raised:
-		0 0 0 1px oklch(20% 0.02 250 / 0.1), 0 2px 4px oklch(20% 0.02 250 / 0.06),
-		0 10px 24px oklch(20% 0.02 250 / 0.12);
+		0 0 0 1px color-mix(in oklch, var(--shade) 10%, transparent),
+		0 2px 4px color-mix(in oklch, var(--shade) 6%, transparent),
+		0 10px 24px light-dark(oklch(20% 0.02 250 / 0.12), oklch(0% 0 0 / 0.45));
 
 	/* Type */
 	--font-ui: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, 'Segoe UI', sans-serif;
@@ -80,11 +110,38 @@
 	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 	--fast: 120ms;
 	--medium: 200ms;
-	--focus-ring: oklch(55% 0.17 264 / 0.22);
 
 	/* Shell */
 	--rail-width: 4.25rem;
 	--topbar-height: 3rem;
+}
+
+/* A theme chosen in the account settings overrides the system's. */
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+	color-scheme: dark;
+}
+
+/*
+ * White pages glare beside dark surroundings, so in the dark theme rendered
+ * pages and thumbnails are shown a little dimmer, unless that is turned off.
+ * Only how they are shown changes; a document's colours and exports do not.
+ */
+:root {
+	--page-filter: none;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']):not([data-pages='white']) {
+		--page-filter: brightness(0.86);
+	}
+}
+
+:root[data-theme='dark']:not([data-pages='white']) {
+	--page-filter: brightness(0.86);
 }
 
 *,
@@ -93,12 +150,17 @@
 	box-sizing: border-box;
 }
 
+::selection {
+	background: var(--selection);
+	color: var(--ink);
+}
+
 html {
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
 	/* Quiet scrollbars that match the chrome instead of the system's heavy default. */
 	scrollbar-width: thin;
-	scrollbar-color: oklch(80% 0.01 250) transparent;
+	scrollbar-color: var(--scrollbar) transparent;
 }
 
 * {
@@ -190,7 +252,7 @@ pre {
 	text-decoration: none;
 	white-space: nowrap;
 	cursor: pointer;
-	box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+	box-shadow: var(--shadow-edge);
 	transition:
 		background-color var(--fast) var(--ease-out),
 		border-color var(--fast) var(--ease-out),

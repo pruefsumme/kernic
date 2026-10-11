@@ -435,7 +435,8 @@
 		width: 100%;
 		height: auto;
 		border: 1px solid var(--rule);
-		background: #fff;
+		background: var(--paper);
+		filter: var(--page-filter);
 	}
 
 	aside form {

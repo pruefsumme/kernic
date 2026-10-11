@@ -103,7 +103,6 @@ details.
 - Replace across all files of a project (search across them exists).
 - Project folders and "move to workspace" on the dashboard.
 - Share dialog (depends on team access).
-- Dark theme, as an explicit choice.
 - Accounts: make another person an administrator; change one's email address; single sign-on
   against Gitea/Forgejo or another provider with `openid-client`.
 - Polish, second round: optimistic file-tree updates, a skeleton for the first render of a
@@ -138,6 +137,10 @@ details.
 - Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
   and files, history and the restarted app are examined; leftovers of cut-off saves are
   cleared at startup.
+- Appearance (Account, Appearance): light, dark or following the system; an accent colour from
+  presets or any hue; pages softened in the dark theme. Kept per browser in a cookie and
+  rendered by the server, so pages never flash in the other theme. A selection in the editor
+  now stays visible on the highlighted line.
 - Editor assistance: one sandboxed Tinymist language server per open editor in the worker,
   reached through authenticated routes of the app (HTTP posts and server-sent events, no
   WebSocket), with `@codemirror/lsp-client` in the editor. Completion, hover documentation,

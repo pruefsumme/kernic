@@ -128,6 +128,9 @@ signed-in user's files, and everything fetched from outside (packages).
   may contain HTML. Only plain formatting elements, `class` and web links survive; scripts,
   images, styles and event handlers are removed. **Tested** with a doc comment carrying an
   image with an error handler and a script.
+- The chosen look (theme and accent hue) is kept in a cookie that scripts may read, and the
+  server writes it into each page. Only a theme from a fixed list and a number are accepted;
+  anything else gives the default. **Tested** with markup in the cookie.
 - App pages carry a content security policy (scripts only from Kernic itself), `X-Frame-Options:
   DENY`, `Cross-Origin-Opener-Policy`, `Referrer-Policy` and `Permissions-Policy`. The
   end-to-end tests fail on any policy violation the browser reports.

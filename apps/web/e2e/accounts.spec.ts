@@ -155,6 +155,52 @@ test('the account page changes name and password and signs other sessions out', 
 	await phone.context().close();
 });
 
+test('the look of the app can be chosen and is there from the first byte', async ({
+	page,
+	baseURL
+}) => {
+	await page.goto('/account');
+	const root = page.locator('html');
+	const surface = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+	const accent = () =>
+		page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-h'));
+	const light = await surface();
+
+	// Dark applies at once …
+	await page.getByText('Always dark').click();
+	await expect(root).toHaveAttribute('data-theme', 'dark');
+	expect(await surface()).not.toBe(light);
+
+	// … and so does another accent colour, by name or by hue.
+	await page.getByTitle('Green').click();
+	expect((await accent()).trim()).toBe('155');
+	await page.getByLabel('Any other colour').fill('20');
+	expect((await accent()).trim()).toBe('20');
+
+	// The server sends the next page in that look, before any script runs.
+	const html = await (await page.request.get('/account')).text();
+	expect(html).toMatch(/<html[^>]*data-theme="dark"[^>]*style="--accent-h: 20"/);
+	await page.reload();
+	await expect(page.getByRole('radio', { name: /^Dark/ })).toBeChecked();
+
+	// A cookie that is not a look is ignored rather than written into the page.
+	const tampered = await page.request.get('/account', {
+		headers: {
+			cookie: `${(await page.context().cookies(baseURL!))
+				.filter((c) => c.name !== 'kernic_look')
+				.map((c) => `${c.name}=${c.value}`)
+				.join('; ')}; kernic_look="><script>alert(1)</script>`
+		}
+	});
+	const tamperedHtml = await tampered.text();
+	expect(tamperedHtml).toContain('data-theme="system"');
+	expect(tamperedHtml).not.toContain('<script>alert(1)');
+
+	await page.getByRole('button', { name: 'Back to the default' }).click();
+	await expect(root).toHaveAttribute('data-theme', 'system');
+	expect((await accent()).trim()).toBe('264');
+});
+
 test('an administrator can disable an account and issue a password reset link', async ({
 	page,
 	browser

@@ -635,7 +635,7 @@
 					disabled={!canWrite || file?.kind !== 'text'}
 					{cursor}
 					note={assistance.status === 'unavailable' && file?.kind === 'text'
-						? { label: 'No editor assistance', detail: assistance.reason ?? '' }
+						? { label: 'No assistance', detail: assistance.reason ?? '' }
 						: null}
 				/>
 
@@ -811,13 +811,13 @@
 		place-items: center;
 		padding: var(--s-4);
 		border: 2px dashed var(--accent);
-		background: oklch(96% 0.02 264 / 0.7);
+		background: color-mix(in oklch, var(--accent-soft) 70%, transparent);
 		pointer-events: none;
 	}
 
 	.drop.refused {
 		border-color: var(--control-border);
-		background: oklch(97% 0.004 255 / 0.9);
+		background: color-mix(in oklch, var(--ground) 90%, transparent);
 	}
 
 	.drop-card {
@@ -1027,7 +1027,7 @@
 			padding: 0 0.3rem;
 			border-radius: 1rem;
 			background: var(--error);
-			color: oklch(99% 0 0);
+			color: var(--on-error);
 			font-size: 0.6875rem;
 			line-height: 1.1rem;
 		}

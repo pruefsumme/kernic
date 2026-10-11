@@ -287,7 +287,7 @@
 	}
 
 	.start {
-		box-shadow: 0 1px 0 oklch(20% 0.02 250 / 0.05);
+		box-shadow: var(--shadow-edge);
 		transition:
 			background-color var(--fast) var(--ease-out),
 			border-color var(--fast) var(--ease-out),
@@ -483,7 +483,8 @@
 
 	.thumb {
 		display: block;
-		background: #fff;
+		background: var(--paper);
+		filter: var(--page-filter);
 		box-shadow: var(--shadow-sheet);
 		overflow: hidden;
 		transition:

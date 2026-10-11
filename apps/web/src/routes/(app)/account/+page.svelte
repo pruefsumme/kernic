@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppearanceSettings from '#lib/components/AppearanceSettings.svelte';
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
@@ -76,6 +77,11 @@
 					{#if savedBy('name')}<span class="saved" role="status">Saved</span>{/if}
 				</div>
 			</form>
+		</section>
+
+		<section id="appearance">
+			<h2>Appearance</h2>
+			<AppearanceSettings initial={data.appearance} />
 		</section>
 
 		<section>

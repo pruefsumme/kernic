@@ -383,7 +383,8 @@
 		display: block;
 		flex: none;
 		max-width: none;
-		background: #fff;
+		background: var(--paper);
+		filter: var(--page-filter);
 		box-shadow: var(--shadow-sheet);
 		transition: opacity var(--medium) var(--ease-out);
 	}

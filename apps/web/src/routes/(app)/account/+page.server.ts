@@ -1,3 +1,4 @@
+import { APPEARANCE_COOKIE, parseAppearance } from '#lib/appearance.ts';
 import { fail } from '@sveltejs/kit';
 import { recordAudit } from '#lib/server/audit.ts';
 import { readSessionCookie } from '#lib/server/auth/cookies.ts';
@@ -15,6 +16,7 @@ export const load: PageServerLoad = async (event) => {
 	const user = requireUser(event);
 	return {
 		account: { email: user.email, displayName: user.displayName, isAdmin: user.isAdmin },
+		appearance: parseAppearance(event.cookies.get(APPEARANCE_COOKIE)),
 		sessions: await listSessions(user.id, readSessionCookie(event) ?? '')
 	};
 };

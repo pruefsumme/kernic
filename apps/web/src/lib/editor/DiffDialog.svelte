@@ -115,7 +115,7 @@
 	}
 
 	dialog::backdrop {
-		background: oklch(23% 0.02 250 / 0.35);
+		background: var(--scrim);
 	}
 
 	header {
@@ -200,7 +200,7 @@
 
 	/* Colour supports the +/− markers; it is not the only signal. */
 	.line.added {
-		background: oklch(95% 0.045 150);
+		background: var(--added-soft);
 	}
 
 	.line.removed {

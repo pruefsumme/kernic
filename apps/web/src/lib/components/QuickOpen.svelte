@@ -155,7 +155,7 @@
 	}
 
 	dialog::backdrop {
-		background: oklch(23% 0.02 250 / 0.25);
+		background: var(--scrim);
 	}
 
 	.field {
