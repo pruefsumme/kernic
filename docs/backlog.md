@@ -106,7 +106,7 @@ details.
 
 - History: restore a single file; compare any two checkpoints.
 - Re-run the import dry-run compile when a different main file is chosen.
-- Project-wide search and replace.
+- Replace across all files of a project (search across them exists).
 - Project folders and "move to workspace" on the dashboard.
 - Share dialog (depends on team access).
 - Dark theme, as an explicit choice.
@@ -141,6 +141,8 @@ details.
   renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.
 - Account page (name, password, sessions), people management by invitation and reset links,
   activity log.
+- Search in all files of a project (Ctrl+Shift+F): plain text, any capitalisation, grouped by
+  file; a match opens the file at its place.
 - Fonts in the editor: the families installed on the server are completed inside `font: "…"`,
   and the compiler's "unknown font family" warning names the font as written and says what to do.
 - PDF export options: a standard (PDF/A variants, PDF/UA-1), a selection of pages, and

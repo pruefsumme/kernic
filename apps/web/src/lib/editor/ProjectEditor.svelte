@@ -19,6 +19,7 @@
 	import IssuesPanel from './IssuesPanel.svelte';
 	import OutlinePanel from './OutlinePanel.svelte';
 	import PreviewPane from './PreviewPane.svelte';
+	import SearchPanel from './SearchPanel.svelte';
 	import { EditorSession, type Render } from './session.svelte.ts';
 	import SourceEditor from './SourceEditor.svelte';
 
@@ -46,7 +47,7 @@
 			})
 	);
 
-	type Panel = 'files' | 'outline' | 'issues' | 'history';
+	type Panel = 'files' | 'search' | 'outline' | 'issues' | 'history';
 	let openPanel = $state<Panel | null>(null);
 	let pane = $state<'source' | 'preview'>('source');
 	let view = $state<EditorView>();
@@ -261,6 +262,15 @@
 			onclick: () => toggle('files')
 		},
 		{
+			id: 'search',
+			label: 'Search',
+			icon: 'search',
+			active: openPanel === 'search',
+			onclick: () => toggle('search'),
+			// On a phone it is under File, Search in all files.
+			wideOnly: true
+		},
+		{
 			id: 'outline',
 			label: 'Outline',
 			icon: 'outline',
@@ -340,6 +350,13 @@
 				icon: 'download',
 				run: () => location.assign(session.api.archiveUrl)
 			},
+			{
+				id: 'search',
+				label: 'Search in all files',
+				kind: 'Action',
+				icon: 'search',
+				run: show('search')
+			},
 			{ id: 'files', label: 'Show files', kind: 'Action', icon: 'files', run: show('files') },
 			{
 				id: 'outline',
@@ -392,6 +409,10 @@
 			event.preventDefault();
 			void session.save();
 		}
+		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+			event.preventDefault();
+			openPanel = 'search';
+		}
 		if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'k') {
 			event.preventDefault();
 			quickOpen = !quickOpen;
@@ -426,6 +447,9 @@
 			{#snippet trigger()}File{/snippet}
 			<button role="menuitem" onclick={() => (quickOpen = true)}>
 				Go to file or heading… <span class="keys">{quickOpenKeys}</span>
+			</button>
+			<button role="menuitem" onclick={() => (openPanel = 'search')}>
+				Search in all files… <span class="keys">{isMac ? '⇧⌘F' : 'Ctrl+Shift+F'}</span>
 			</button>
 			<hr />
 			<button role="menuitem" disabled={session.exporting} onclick={exportPdf}>Export PDF</button>
@@ -485,6 +509,12 @@
 	{#snippet panel()}
 		{#if openPanel === 'files'}
 			<FilesPanel {session} onopen={(path) => void open(path)} onclose={() => (openPanel = null)} />
+		{:else if openPanel === 'search'}
+			<SearchPanel
+				{session}
+				onreveal={(path, line, column) => void reveal(path, line, column)}
+				onclose={() => (openPanel = null)}
+			/>
 		{:else if openPanel === 'outline'}
 			<OutlinePanel
 				{headings}

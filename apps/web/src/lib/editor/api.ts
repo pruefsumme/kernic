@@ -67,6 +67,16 @@ export type LoadedFile =
 	| { kind: 'text'; text: string; hash: string }
 	| { kind: 'binary'; contentType: string; size: number };
 
+/** A place where searched text occurs; see the server's `SearchMatch`. */
+export interface SearchMatch {
+	path: string;
+	line: number;
+	column: number;
+	preview: string;
+	start: number;
+	length: number;
+}
+
 export interface UploadResult {
 	name: string;
 	path?: string;
@@ -142,6 +152,14 @@ export function createProjectApi(projectId: string) {
 		pageUrl: (hash: string) => `${base}/pages/${hash}`,
 		pdfUrl: (jobId: string) => `${base}/jobs/${jobId}/pdf`,
 		archiveUrl: `${base}/archive`,
+
+		/** Finds text in the saved files of the project. */
+		async search(
+			query: string,
+			signal: AbortSignal
+		): Promise<{ matches: SearchMatch[]; truncated: boolean }> {
+			return (await request(`${base}/search?q=${encodeURIComponent(query)}`, { signal })).json();
+		},
 
 		async tree(): Promise<{ entries: TreeEntry[]; revision: number }> {
 			return (await request(`${base}/tree`)).json();

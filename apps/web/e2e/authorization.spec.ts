@@ -130,6 +130,7 @@ test('another user can neither see nor change a project, through any route', asy
 
 	const attempts: [string, () => Promise<{ status(): number }>][] = [
 		['list files', () => outsiderRequest.get(`${api}/tree`)],
+		['search files', () => outsiderRequest.get(`${api}/search?q=secret`)],
 		['read file', () => outsiderRequest.get(`${api}/files/main.typ`)],
 		[
 			'write file',

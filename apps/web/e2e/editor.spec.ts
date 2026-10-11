@@ -488,6 +488,38 @@ test('the palette jumps to files and headings and runs actions from the keyboard
 	await expect(palette).toBeHidden();
 });
 
+test('text is found in all files of the project, and a match opens its place', async ({ page }) => {
+	await createProject(page, 'Report', 'Search');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	// What was just typed is found too: the search saves first.
+	await appendSource(page, '\nA sentence about Zebrafish.\n');
+	await page.keyboard.press('ControlOrMeta+Shift+f');
+	const search = page.getByRole('complementary', { name: 'Search' });
+	const field = search.getByRole('searchbox', { name: 'Search in all files' });
+	await expect(field).toBeFocused();
+	await field.fill('zebrafish');
+	await expect(search.getByRole('status')).toContainText('1 match in 1 file.');
+	await expect(saveState(page)).toContainText('Saved');
+
+	// Matches in several files are grouped by file; a click opens the file at the match.
+	await field.fill('background');
+	await expect(search.getByRole('heading', { name: 'chapters/introduction.typ' })).toBeVisible();
+	await search
+		.getByRole('button', { name: /background/i })
+		.first()
+		.click();
+	await expect(page).toHaveURL(/file=chapters%2Fintroduction\.typ/);
+	await expect(page.locator('.cm-content')).toBeFocused();
+	await expect(page.locator('.cm-activeLine')).toContainText(/background/i);
+
+	// The query is plain text, not a pattern, and an empty result says what to try.
+	await field.fill('.*');
+	await expect(search.getByRole('status')).toContainText('Nothing found for “.*”');
+	await field.fill('x');
+	await expect(search).toContainText('Type at least two characters');
+});
+
 test('a long document loads only the pages in view and re-fetches only what changed', async ({
 	page
 }) => {

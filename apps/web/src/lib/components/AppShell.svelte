@@ -15,6 +15,11 @@
 		/** Count shown on the icon, e.g. the number of problems. */
 		badge?: number;
 		badgeTone?: 'error' | 'warning';
+		/**
+		 * Left out of the bar at the bottom of a phone screen, where room is
+		 * scarce. Only for what can also be reached another way, such as a menu.
+		 */
+		wideOnly?: boolean;
 	}
 </script>
 
@@ -90,6 +95,7 @@
 		<button
 			class="rail-item"
 			class:active={item.active}
+			class:wide-only={item.wideOnly}
 			type="button"
 			aria-pressed={item.active ?? false}
 			aria-label={item.badge ? `${item.label} (${item.badge})` : undefined}
@@ -449,6 +455,10 @@
 		.rail-item {
 			flex: 1;
 			margin: 0;
+		}
+
+		.rail-item.wide-only {
+			display: none;
 		}
 
 		.rail-item::before {
