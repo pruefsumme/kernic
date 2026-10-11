@@ -92,6 +92,19 @@ signed-in user's files, and everything fetched from outside (packages).
   compiler that was made to compile behind the worker's back, a compile over the time limit and
   a compiler over its memory allowance are each handled. Also run in the Docker deployment.
 
+- Editor assistance runs the Tinymist language server, one per open editor, under the same
+  confinement and limits as a compiler and on its own copy of the project. The editor does not
+  talk to it directly: the worker passes on only a fixed list of requests (completion, hover,
+  definition, references, rename, formatting and the document notifications), so the server's
+  commands that export files or start previews cannot be reached; it sets the project root and
+  the server's settings itself; and it translates file addresses, so the editor only ever
+  names `file:///project/…` and never learns where the copy lies. The app in front of it ties
+  each connection to one person and one project. **Tested** in all three confinement modes:
+  export and preview commands are refused and write nothing, addresses outside the project
+  (plain, with `..`, percent-encoded) are refused, settings and root sent by the editor are
+  ignored, nothing the editor receives contains a path of the worker, and another account
+  gets "not found" for a project's assistance routes.
+
 ### Uploads, archives, packages
 
 - Paths: one validator for every path; rejects `..`, absolute paths, backslashes, control
@@ -111,6 +124,10 @@ signed-in user's files, and everything fetched from outside (packages).
 
 - Project files and rendered pages are served with `Content-Security-Policy: default-src
   'none'; sandbox` and `nosniff`; HTML uploads are served as plain text. **Tested.**
+- Documentation shown on hover comes from the document and its packages as Markdown, which
+  may contain HTML. Only plain formatting elements, `class` and web links survive; scripts,
+  images, styles and event handlers are removed. **Tested** with a doc comment carrying an
+  image with an error handler and a script.
 - App pages carry a content security policy (scripts only from Kernic itself), `X-Frame-Options:
   DENY`, `Cross-Origin-Opener-Policy`, `Referrer-Policy` and `Permissions-Policy`. The
   end-to-end tests fail on any policy violation the browser reports.
@@ -188,8 +205,8 @@ each is in the [backlog](backlog.md).
 
 1. **Package authenticity rests on HTTPS and first download.** The registry publishes no
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
-2. **Single process.** Rate limits and the per-project lock live in memory; running several app
-   instances is not supported.
+2. **Single process.** Rate limits, the per-project lock and editor-assistance connections live
+   in memory; running several app instances is not supported.
 3. **No fairness in the compile queue.** One account can queue compiles for many projects.
 4. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
    between two released versions, power loss during a save.
@@ -210,7 +227,7 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Fonts | 276 families in the Docker image: Typst's embedded fonts plus Liberation, DejaVu, Noto, Inter, Roboto, Open Sans, Lato, TeX Gyre, Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond, Atkinson Hyperlegible, Fira Code and JetBrains Mono. Other fonts are uploaded into the project or added to the server. Not compared one by one with typst.app's selection. |
 | Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s for the first compile and for an export, 0.4 s for each following preview. The preview loads only the pages in view and re-fetches only pages that changed. |
 | Preview | Server-rendered after a pause in typing of 0.4 s; for the 74-page document the pages follow about 0.4 s later (measured, also in Docker). typst.app renders in the browser as you type, which is still faster. |
-| Editor assistance | Syntax highlighting, quick open (Ctrl+K) for files and headings, and completion of installed font families. No completion of functions, labels or citations, no hover documentation, go-to-definition or formatting yet. |
+| Editor assistance | Tinymist, the language server the Typst editor extensions use: completion of functions, parameters, labels, citations, fonts and packages; documentation on hover; signature help; go to definition across files (F12); find references; rename (F2); formatting (Shift+Alt+F). Also quick open (Ctrl+K) and search in all files. Not there yet: errors as you type (they follow the compile after each save) and jumping between a place on the page and its source. |
 | Collaboration, comments, sharing links | Not available. |
 | PDF options | Export → "PDF with options": PDF/A-1b, 2b, 2a, 3b, 4 and PDF/UA-1, a selection of pages, and accessibility tags. A document that does not meet the chosen standard is refused with the compiler's reason. Whether a file passes an external validator such as veraPDF has not been checked. |
 | Version history | Explicit checkpoints with diff and restore, plus automatic snapshots at most every ten minutes. |

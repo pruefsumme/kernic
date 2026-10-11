@@ -329,8 +329,10 @@ test('installed fonts are completed, and a missing font is explained', async ({ 
 	// Inside font: "…" the families installed on the server are offered.
 	await appendSource(page, '\n#set text(font: "Libert');
 	const completions = page.locator('.cm-tooltip-autocomplete');
-	await expect(completions.getByText('Libertinus Serif', { exact: true })).toBeVisible();
-	await page.keyboard.press('Enter');
+	// With a language server the entry also tells about the family's variants.
+	const family = completions.getByRole('option').filter({ hasText: 'Libertinus Serif' });
+	await expect(family).toBeVisible();
+	await family.click();
 	await expect.poll(() => editorText(page)).toContain('font: "Libertinus Serif"');
 	await expect(saveState(page)).toContainText('Saved');
 	await expect(previewStatus(page)).toContainText('Up to date');

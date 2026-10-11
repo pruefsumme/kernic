@@ -233,7 +233,10 @@ for (const { mode, available } of sandboxes) {
 					position: { line: 1, character: 8 }
 				});
 				const [target] = [definition.result].flat();
-				assert.equal(target.targetUri ?? target.uri, 'file:///project/template.typ');
+				assert.equal(target.targetUri, 'file:///project/template.typ');
+				// Also readable as a plain location.
+				assert.equal(target.uri, 'file:///project/template.typ');
+				assert.deepEqual(target.range.start, { line: 1, character: 5 });
 
 				// In a chapter, labels of the whole document are known: it is compiled from the
 				// main file (which has to compile for that, so its unfinished line goes).

@@ -9,11 +9,14 @@
 	let {
 		view,
 		disabled,
-		cursor
+		cursor,
+		note = null
 	}: {
 		view: EditorView | undefined;
 		disabled: boolean;
 		cursor: { line: number; column: number } | null;
+		/** A short remark about the editor's state, with the reason as its tooltip. */
+		note?: { label: string; detail: string } | null;
 	} = $props();
 
 	const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -129,6 +132,9 @@
 		<Icon name="code" size={18} />
 	</button>
 
+	{#if note}
+		<span class="note" title={note.detail}>{note.label}</span>
+	{/if}
 	{#if cursor}
 		<span class="cursor">Ln {cursor.line}, Col {cursor.column}</span>
 	{/if}
@@ -208,6 +214,20 @@
 		height: 1.25rem;
 		margin: 0 var(--s-1);
 		background: var(--rule);
+	}
+
+	.note {
+		flex: none;
+		margin-left: auto;
+		padding-left: var(--s-3);
+		color: var(--ink-2);
+		font-size: var(--t-meta);
+		white-space: nowrap;
+		cursor: help;
+	}
+
+	.note + .cursor {
+		margin-left: 0;
 	}
 
 	.cursor {

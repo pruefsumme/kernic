@@ -47,6 +47,16 @@ async function importedPackages(root: string, snapshot: Snapshot): Promise<Set<s
 	return specs;
 }
 
+/**
+ * A snapshot of a directory of Typst files together with the packages its
+ * sources import, as far as they could be provided.
+ */
+export async function snapshotWithPackages(root: string) {
+	const snapshot = await snapshotTree(root);
+	const { packages, failures } = await resolvePackages(await importedPackages(root, snapshot));
+	return { snapshot, packages, failures };
+}
+
 const PACKAGE_ERROR = /^(failed to download package|package not found|failed to load package)/;
 const SPEC_IN_SOURCE = /"(@[a-z0-9-]+\/[a-z0-9-]+:[0-9.]+)"/;
 
@@ -162,8 +172,7 @@ async function compileOnce(
 	format: OutputFormat,
 	options: CompileOptions
 ): Promise<ProjectCompile> {
-	const snapshot = await snapshotTree(root);
-	const { packages, failures } = await resolvePackages(await importedPackages(root, snapshot));
+	const { snapshot, packages, failures } = await snapshotWithPackages(root);
 
 	const result = await compileSnapshot({
 		entry,

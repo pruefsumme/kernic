@@ -57,6 +57,7 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
+		"@codemirror/lsp-client": "6.3.0",
 		"postgres": "^3.4.9",
 		"tar": "^7.5.22",
 		"yauzl": "^3.4.0",

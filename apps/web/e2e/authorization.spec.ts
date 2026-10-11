@@ -131,6 +131,11 @@ test('another user can neither see nor change a project, through any route', asy
 	const attempts: [string, () => Promise<{ status(): number }>][] = [
 		['list files', () => outsiderRequest.get(`${api}/tree`)],
 		['search files', () => outsiderRequest.get(`${api}/search?q=secret`)],
+		['open editor assistance', () => outsiderRequest.post(`${api}/lsp`, write)],
+		[
+			'listen to editor assistance',
+			() => outsiderRequest.get(`${api}/lsp/${'0'.repeat(48)}`, { timeout: 5000 })
+		],
 		['read file', () => outsiderRequest.get(`${api}/files/main.typ`)],
 		[
 			'write file',

@@ -223,6 +223,33 @@ export function createProjectApi(projectId: string) {
 			return (await request(`${base}/upload`, { method: 'POST', body: form })).json();
 		},
 
+		/** Opens a connection to a language server, or says why there is none. */
+		async openLanguage(): Promise<{ id: string } | { unavailable: string }> {
+			const response = await fetch(`${base}/lsp`, { method: 'POST' });
+			if (response.status === 503) return response.json();
+			if (!response.ok) throw new ApiError(response.status, 'Editor assistance could not start.');
+			return response.json();
+		},
+
+		languageEventsUrl: (connection: string) => `${base}/lsp/${connection}`,
+
+		/** Sends protocol messages (as JSON texts) to the language server, in order. */
+		async sendLanguage(connection: string, messages: string[]): Promise<void> {
+			await request(`${base}/lsp/${connection}`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: `{"messages":[${messages.join(',')}]}`
+			});
+		},
+
+		async refreshLanguage(connection: string): Promise<void> {
+			await request(`${base}/lsp/${connection}`, { method: 'PUT' });
+		},
+
+		async closeLanguage(connection: string): Promise<void> {
+			await fetch(`${base}/lsp/${connection}`, { method: 'DELETE', keepalive: true });
+		},
+
 		/** Font families installed on the server; empty if they cannot be listed right now. */
 		async fonts(): Promise<string[]> {
 			const body = (await (await request('/api/fonts')).json()) as { families: string[] };

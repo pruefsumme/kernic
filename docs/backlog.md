@@ -25,23 +25,17 @@ the item is built.
 
 ## Next
 
-### 1. Editor assistance and source-to-page jumps with Tinymist
+### 1. Preview that follows typing, and jumps between page and source
 
-This is also the next step for preview speed: Tinymist's preview renders incrementally and only
-what is visible, where the warm compiler (see "Done") still renders whole pages about 0.4 s
-after a pause in typing.
+Editor assistance from Tinymist is in place (see "Done"). What Tinymist can still give:
 
-Hover documentation, go-to-definition, formatting, rename and diagnostics while typing; clicking
-a place on a page jumps to its source and back.
-
-- Tinymist is the language server the Typst community and editor extensions use; its releases
-  follow the compiler's. Tested here: the installed build offers `tinymist lsp` and
-  `tinymist preview` (with partial rendering).
-- Browser side: `@codemirror/lsp-client`, behind the existing editor adapter, over a WebSocket.
-- Server side: one Tinymist process per open project in a container with the same isolation as
-  the compile worker (Landlock, no network), bounded count and memory. It sees project files
-  through the language-server protocol, not a shared volume.
-- Not verified: resource use per session, and how Tinymist's preview is best embedded.
+- Its preview renders incrementally and only what is visible, and knows which place on a page
+  belongs to which place in the source. That would let the preview follow each keystroke and
+  make a click on the page jump to its source, and back. It needs the preview's own protocol
+  passed through the worker with the same care as the language-server protocol.
+- Errors and warnings while typing, from the language server's diagnostics, merged with the
+  compiler's after each save so that nothing is shown twice.
+- Not verified: how much memory and processor time the preview adds per open editor.
 
 ### 2. Fair compile queue, and readiness for more than one app process
 
@@ -144,6 +138,11 @@ details.
 - Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
   and files, history and the restarted app are examined; leftovers of cut-off saves are
   cleared at startup.
+- Editor assistance: one sandboxed Tinymist language server per open editor in the worker,
+  reached through authenticated routes of the app (HTTP posts and server-sent events, no
+  WebSocket), with `@codemirror/lsp-client` in the editor. Completion, hover documentation,
+  signature help, go to definition, find references, rename, formatting. Off where Tinymist
+  is not installed or `KERNIC_LANGUAGE_SESSIONS=0`.
 - Search in all files of a project (Ctrl+Shift+F): plain text, any capitalisation, grouped by
   file; a match opens the file at its place.
 - Fonts in the editor: the families installed on the server are completed inside `font: "…"`,

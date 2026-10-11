@@ -23,7 +23,13 @@ import {
 	type Diagnostic as EditorDiagnostic
 } from '@codemirror/lint';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
-import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
+import {
+	Compartment,
+	EditorState,
+	StateEffect,
+	StateField,
+	type Extension
+} from '@codemirror/state';
 import {
 	EditorView,
 	drawSelection,
@@ -120,6 +126,33 @@ const theme = EditorView.theme({
 		color: 'var(--accent-ink)'
 	},
 	'.cm-tooltip-autocomplete ul': { fontFamily: 'var(--font-mono)' },
+	// Documentation from the language server: prose in the interface font, code as code.
+	'.cm-lsp-documentation': {
+		maxWidth: 'min(34rem, 80vw)',
+		maxHeight: '18rem',
+		padding: '0.375rem 0.625rem',
+		overflow: 'auto',
+		lineHeight: '1.45'
+	},
+	'.cm-lsp-documentation code, .cm-lsp-documentation pre': {
+		fontFamily: 'var(--font-mono)',
+		fontSize: '0.92em'
+	},
+	'.cm-lsp-documentation pre': { margin: '0.25rem 0', whiteSpace: 'pre-wrap' },
+	'.cm-lsp-documentation h1, .cm-lsp-documentation h2, .cm-lsp-documentation h3': {
+		margin: '0.5rem 0 0.125rem',
+		fontSize: 'var(--t-meta)',
+		fontWeight: '600',
+		color: 'var(--ink-2)'
+	},
+	'.cm-lsp-documentation hr': {
+		border: '0',
+		borderTop: '1px solid var(--rule)',
+		margin: '0.375rem 0'
+	},
+	'.cm-lsp-signature-tooltip .cm-lsp-signature, .cm-lsp-signature-tooltip .cm-lsp-signature-num': {
+		fontFamily: 'var(--font-mono)'
+	},
 	'.cm-diagnostic': { padding: '0.375rem 0.625rem', borderLeftWidth: '3px' },
 	'.cm-diagnostic-error': { borderLeftColor: 'var(--error)' },
 	'.cm-diagnostic-warning': { borderLeftColor: 'var(--warning)' },
@@ -214,7 +247,17 @@ function fontCompletions(families: () => string[]): CompletionSource {
 	};
 }
 
+/** Holds what connects an editor to the language server; empty while there is none. */
+const assistance = new Compartment();
+
+/** Connects an editor to the language server, or disconnects it with `null`. */
+export function setAssistance(view: EditorView, extension: Extension | null): void {
+	view.dispatch({ effects: assistance.reconfigure(extension ?? []) });
+}
+
 export function editorExtensions(options: {
+	/** Connection to the language server for this file, if there is one already. */
+	assistance: Extension | null;
 	/** Font families to offer; read whenever completion starts, so a late list is picked up. */
 	fonts: () => string[];
 	readOnly: boolean;
@@ -244,6 +287,7 @@ export function editorExtensions(options: {
 		EditorView.lineWrapping,
 
 		EditorState.languageData.of(() => completionData),
+		assistance.of(options.assistance ?? []),
 		typst_lezer().language,
 		typstLezerIndentService,
 		typstLezerListKeymap,

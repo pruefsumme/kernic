@@ -1,4 +1,5 @@
-# Compile worker: the official Typst CLI plus a small Node service.
+# Compile worker: the official Typst CLI, the Tinymist language server, and a
+# small Node service.
 # Build from the repository root:  docker build -f apps/worker/Dockerfile .
 
 FROM debian:trixie-slim AS typst
@@ -23,6 +24,26 @@ RUN set -eu; \
 	tar -xJf /tmp/typst.tar.xz -C /tmp; \
 	install -m 0755 "/tmp/${name}/typst" /usr/local/bin/typst
 
+# Pinned Tinymist release, for editor assistance. Its releases follow Typst's:
+# pick the one built for the Typst version above, and update the version and
+# both checksums together.
+ARG TINYMIST_VERSION=0.15.8
+ARG TINYMIST_SHA256_X86_64=816d33895ae343f934403dbd73f687a531368464450451510f3c108b0c04bcfd
+ARG TINYMIST_SHA256_AARCH64=8055377bfd463c05dc7e9cf4116d355ba0c2bb80a68a583b31905830f2d311eb
+RUN set -eu; \
+	arch="$(uname -m)"; \
+	case "$arch" in \
+		x86_64) sha256="$TINYMIST_SHA256_X86_64" ;; \
+		aarch64) sha256="$TINYMIST_SHA256_AARCH64" ;; \
+		*) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+	esac; \
+	name="tinymist-$arch-unknown-linux-musl"; \
+	curl -fsSL -o /tmp/tinymist.tar.gz \
+		"https://github.com/Myriad-Dreamin/tinymist/releases/download/v${TINYMIST_VERSION}/${name}.tar.gz"; \
+	echo "$sha256  /tmp/tinymist.tar.gz" | sha256sum -c -; \
+	tar -xzf /tmp/tinymist.tar.gz -C /tmp; \
+	install -m 0755 "/tmp/${name}/tinymist" /usr/local/bin/tinymist
+
 # Debian 13: its util-linux (2.41) provides `setpriv` with Landlock support, which
 # confines each compile to its own files.
 FROM node:24-trixie-slim
@@ -40,7 +61,7 @@ RUN apt-get update \
 		fonts-firacode fonts-jetbrains-mono \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& fc-cache -f
-COPY --from=typst /usr/local/bin/typst /usr/local/bin/typst
+COPY --from=typst /usr/local/bin/typst /usr/local/bin/tinymist /usr/local/bin/
 
 WORKDIR /app
 COPY apps/worker/package.json ./

@@ -125,10 +125,6 @@ export async function compileSnapshot(request: {
 	/** Options of a PDF export. */
 	pdf?: PdfOptions | null;
 }): Promise<WorkerResult> {
-	const reference = (file: { path: string; sha256: string }) => ({
-		path: file.path,
-		sha256: file.sha256
-	});
 	const body = JSON.stringify({
 		entry: request.entry,
 		format: request.format,
@@ -144,25 +140,40 @@ export async function compileSnapshot(request: {
 		pdf: request.pdf ?? undefined
 	});
 
+	return postSnapshot<WorkerResult>('/compile', body, request);
+}
+
+/** The worker has no room for this right now, or lacks what it needs; the message says which. */
+export class WorkerRefusedError extends Error {}
+
+/**
+ * Sends a request that refers to files by hash. The worker answers 409 with
+ * the hashes it lacks, which are then uploaded before trying again.
+ */
+async function postSnapshot<Result>(
+	pathname: string,
+	body: string,
+	source: { root: string; files: SnapshotFile[]; packages: PackageInput[] }
+): Promise<Result> {
 	// Where to read each blob from, should the worker ask for it.
 	const locations = new Map<string, string>();
-	for (const file of request.files) {
-		locations.set(file.sha256, path.join(request.root, ...file.path.split('/')));
+	for (const file of source.files) {
+		locations.set(file.sha256, path.join(source.root, ...file.path.split('/')));
 	}
-	for (const item of request.packages) {
+	for (const item of source.packages) {
 		for (const file of item.files) {
 			locations.set(file.sha256, path.join(item.directory, ...file.path.split('/')));
 		}
 	}
 
 	for (let attempt = 0; attempt < 6; attempt++) {
-		const response = await workerFetch('/compile', {
+		const response = await workerFetch(pathname, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body
 		});
 
-		if (response.status === 200) return (await response.json()) as WorkerResult;
+		if (response.status === 200) return (await response.json()) as Result;
 
 		if (response.status === 409) {
 			const { missing } = (await response.json()) as { missing: string[] };
@@ -180,6 +191,11 @@ export async function compileSnapshot(request: {
 			continue;
 		}
 
+		if (response.status === 503) {
+			const { error } = (await response.json().catch(() => ({}))) as { error?: string };
+			throw new WorkerRefusedError(error ?? 'The compile worker cannot do this right now.');
+		}
+
 		const detail = await response.text().catch(() => '');
 		throw new WorkerUnavailableError(
 			`The compile worker answered HTTP ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ''}.`
@@ -187,6 +203,80 @@ export async function compileSnapshot(request: {
 	}
 
 	throw new WorkerUnavailableError('The compile worker is busy. Try again in a moment.');
+}
+
+const reference = (file: { path: string; sha256: string }) => ({
+	path: file.path,
+	sha256: file.sha256
+});
+
+/**
+ * Starts a language server in the worker under `name`, or brings a running
+ * one to these files. Throws `WorkerRefusedError` when the worker offers none.
+ */
+export async function startLanguageServer(request: {
+	name: string;
+	entry: string;
+	root: string;
+	files: SnapshotFile[];
+	packages: PackageInput[];
+}): Promise<void> {
+	const body = JSON.stringify({
+		entry: request.entry,
+		files: request.files.map(reference),
+		packages: request.packages.map(({ namespace, name, version, files }) => ({
+			namespace,
+			name,
+			version,
+			files: files.map(reference)
+		}))
+	});
+	await postSnapshot(`/lsp/${request.name}`, body, request);
+}
+
+/** Passes protocol messages from an editor to its language server. False if it is gone. */
+export async function sendToLanguageServer(name: string, messages: unknown[]): Promise<boolean> {
+	const response = await workerFetch(`/lsp/${name}/messages`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ messages })
+	});
+	await response.body?.cancel();
+	if (response.status === 404) return false;
+	if (!response.ok) {
+		throw new WorkerUnavailableError(`The compile worker answered HTTP ${response.status}.`);
+	}
+	return true;
+}
+
+/**
+ * The messages of a language server, one JSON document per line, for as long
+ * as it runs or until `signal` aborts. Null if there is no such server.
+ */
+export async function languageServerStream(
+	name: string,
+	signal: AbortSignal
+): Promise<ReadableStream<Uint8Array> | null> {
+	let response: Response;
+	try {
+		// No overall time limit: this stays open for as long as the editor does.
+		response = await fetch(`${KERNIC_WORKER_URL}/lsp/${name}/stream`, {
+			headers: authorization,
+			signal
+		});
+	} catch (error) {
+		throw new WorkerUnavailableError('The compile worker could not be reached.', { cause: error });
+	}
+	if (!response.ok || !response.body) {
+		await response.body?.cancel();
+		return null;
+	}
+	return response.body;
+}
+
+export async function stopLanguageServer(name: string): Promise<void> {
+	const response = await workerFetch(`/lsp/${name}`, { method: 'DELETE' }).catch(() => null);
+	await response?.body?.cancel();
 }
 
 export async function workerHealth(): Promise<{ ok: boolean; typstVersion?: string }> {

@@ -167,6 +167,12 @@ function translateUris(
 			result[key] = translateUris(item, translate, reword);
 		}
 	}
+	// The server answers "where is this defined" with links (`targetUri`); editors
+	// that only know plain locations (`uri`, `range`) can read them this way too.
+	if (reword && typeof result.targetUri === 'string' && result.uri === undefined) {
+		result.uri = result.targetUri;
+		result.range = result.targetSelectionRange ?? result.targetRange;
+	}
 	return result;
 }
 

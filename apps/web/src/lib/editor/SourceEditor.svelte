@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { EditorState } from '@codemirror/state';
+	import { untrack } from 'svelte';
+	import { EditorState, type Extension } from '@codemirror/state';
 	import { EditorView } from '@codemirror/view';
 	import type { Diagnostic } from './api.ts';
 	import {
 		editorExtensions,
 		extractHeadings,
+		setAssistance,
 		setCompileDiagnostics,
 		toEditorDiagnostics,
 		type Heading
@@ -19,6 +21,7 @@
 		readOnly,
 		diagnostics,
 		fonts,
+		assistance,
 		view = $bindable(),
 		onchange,
 		onsave,
@@ -31,6 +34,8 @@
 		diagnostics: Diagnostic[];
 		/** Font families installed on the server, offered inside `font: "…"`. */
 		fonts: string[];
+		/** Connects this file to the language server; null while there is none. */
+		assistance: Extension | null;
 		view?: EditorView;
 		onchange: () => void;
 		onsave: () => void;
@@ -40,12 +45,24 @@
 
 	let outlineTimer: ReturnType<typeof setTimeout> | undefined;
 
+	/** What the editor is currently connected with, to change it only when it changes. */
+	let connected: Extension | null = untrack(() => assistance);
+
+	// The language server may become available, or go away, while a file is open.
+	$effect(() => {
+		const wanted = assistance;
+		if (!view || wanted === connected) return;
+		connected = wanted;
+		setAssistance(view, wanted);
+	});
+
 	function mount(parent: HTMLElement) {
 		const created = new EditorView({
 			parent,
 			state: EditorState.create({
 				doc: text,
 				extensions: editorExtensions({
+					assistance: connected,
 					fonts: () => fonts,
 					readOnly,
 					onSave: onsave,

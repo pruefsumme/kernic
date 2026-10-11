@@ -84,6 +84,7 @@ Set these in `deploy/.env`, then apply with `docker compose up -d`.
 | `KERNIC_WORKER_MEMORY` | `4g` | Memory limit of the compile worker. |
 | `KERNIC_COMPILE_TIMEOUT_MS` | `20000` | A compile is stopped after this time. |
 | `KERNIC_WARM_SESSIONS` | `2` | Projects whose compiler stays running between preview compiles. `0` turns this off. See below. |
+| `KERNIC_LANGUAGE_SESSIONS` | `4` | Open editors that get assistance from a language server at once. `0` turns this off. See below. |
 
 ### Preview speed and memory
 
@@ -97,6 +98,22 @@ allows; the project edited longest ago gives way.
 Plan about 1 GB of `KERNIC_WORKER_MEMORY` for each warm compiler, on top of 2 GB for everything
 else. On a small server, set `KERNIC_WARM_SESSIONS=1` or `0`. PDF export always compiles from
 the start.
+
+### Editor assistance
+
+Completion of functions, labels, citations and fonts, documentation on hover, go to definition,
+rename and formatting come from [Tinymist](https://github.com/Myriad-Dreamin/tinymist), the
+Typst language server, which is part of the worker image. One runs per open editor, confined
+like a compiler to a copy of that project, and it is stopped ten minutes after the editor last
+used it or when the editor is closed.
+
+`KERNIC_LANGUAGE_SESSIONS` bounds how many editors are assisted at the same time; each person
+can have up to three. When all places are taken, a further editor works without assistance and
+says so; a place is given up by an editor that has been quiet for two minutes. Plan about
+100 to 300 MB of `KERNIC_WORKER_MEMORY` per place, more for very long documents, and note that
+a language server compiles as its editor types, within the worker's CPU limit. For many
+simultaneous writers, raise the number together with `KERNIC_WORKER_CPUS` and
+`KERNIC_WORKER_MEMORY`; on a small server, lower it.
 
 If you raise `KERNIC_MAX_PROJECT_MB` above 200, also raise `BODY_SIZE_LIMIT` of the app (set in
 `apps/web/Dockerfile`, default `256M`) by adding it under `app.environment` in `compose.yaml`;

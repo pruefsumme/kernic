@@ -9,7 +9,9 @@
 	import QuickOpen, { type QuickItem } from '#lib/components/QuickOpen.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
 	import { formatBytes } from '#lib/format.ts';
+	import { formatDocument, jumpToDefinition, renameSymbol } from '@codemirror/lsp-client';
 	import { createProjectApi, type Diagnostic, type TreeEntry } from './api.ts';
+	import { Assistance } from './assistance.svelte.ts';
 	import { revealPosition, type Heading } from './codemirror.ts';
 	import FilesPanel from './FilesPanel.svelte';
 	import ExportDialog from './ExportDialog.svelte';
@@ -47,6 +49,16 @@
 			})
 	);
 
+	// Completion, documentation and navigation from the language server, when there is one.
+	const assistance = untrack(
+		() =>
+			new Assistance(session.api, async (path) => {
+				if (!(await open(path))) return null;
+				await tick();
+				return view ?? null;
+			})
+	);
+
 	type Panel = 'files' | 'search' | 'outline' | 'issues' | 'history';
 	let openPanel = $state<Panel | null>(null);
 	let pane = $state<'source' | 'preview'>('source');
@@ -61,6 +73,13 @@
 	const fileDiagnostics = $derived(
 		session.diagnostics.filter((diagnostic) => diagnostic.path === file?.path)
 	);
+	const assisted = $derived(file?.kind === 'text' ? assistance.extensionFor(file.path) : null);
+	// The language server works on a copy of the project, which follows what is saved.
+	$effect(() => {
+		void session.revision;
+		untrack(() => assistance.projectChanged());
+	});
+
 	const isImage = $derived(file?.kind === 'binary' && file.contentType.startsWith('image/'));
 
 	onMount(() => {
@@ -79,6 +98,7 @@
 		if (initial) void open(initial);
 		session.requestCompile();
 		// Only used for completion, so the editor does not wait for it or mind if it fails.
+		void assistance.connect();
 		void session.api.fonts().then(
 			(families) => (session.fonts = families),
 			() => {}
@@ -96,6 +116,7 @@
 			for (const [type, listener] of Object.entries(dragEvents)) {
 				window.removeEventListener(type, listener as EventListener, true);
 			}
+			assistance.dispose();
 			session.dispose();
 		};
 	});
@@ -388,7 +409,35 @@
 				run: () => void goto('/')
 			}
 		];
-		return [...files, ...sections, ...actions];
+		// Offered while the language server assists the open file.
+		const editor = view;
+		const assistedActions: QuickItem[] =
+			assisted && editor
+				? [
+						{
+							id: 'format',
+							label: 'Format this file',
+							kind: 'Action',
+							icon: 'code',
+							run: () => void formatDocument(editor)
+						},
+						{
+							id: 'rename',
+							label: 'Rename the symbol at the cursor',
+							kind: 'Action',
+							icon: 'code',
+							run: () => void renameSymbol(editor)
+						},
+						{
+							id: 'definition',
+							label: 'Go to the definition of the symbol at the cursor',
+							kind: 'Action',
+							icon: 'code',
+							run: () => void jumpToDefinition(editor)
+						}
+					]
+				: [];
+		return [...files, ...sections, ...assistedActions, ...actions];
 	});
 
 	const footer = $derived<RailItem[]>([
@@ -581,7 +630,14 @@
 
 		<div class="workspace" bind:this={workspace} style:--split="{split}%" data-pane={pane}>
 			<section class="source" aria-label="Source">
-				<FormatToolbar {view} disabled={!canWrite || file?.kind !== 'text'} {cursor} />
+				<FormatToolbar
+					{view}
+					disabled={!canWrite || file?.kind !== 'text'}
+					{cursor}
+					note={assistance.status === 'unavailable' && file?.kind === 'text'
+						? { label: 'No editor assistance', detail: assistance.reason ?? '' }
+						: null}
+				/>
 
 				{#if session.saveState === 'conflict'}
 					<div class="banner" role="alert">
@@ -660,7 +716,8 @@
 								text={file.text}
 								readOnly={!canWrite}
 								diagnostics={fileDiagnostics}
-								fonts={session.fonts}
+								fonts={assisted ? [] : session.fonts}
+								assistance={assisted}
 								onchange={() => session.noteEdit()}
 								onsave={() => void session.save()}
 								oncursor={(line, column) => (cursor = { line, column })}
