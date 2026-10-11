@@ -18,6 +18,9 @@
 	let theme = $state<Theme>(untrack(() => initial.theme));
 	let hue = $state(untrack(() => initial.hue));
 	let pages = $state(untrack(() => initial.pages));
+	// Whether the colour was set with the slider. A named colour is then not shown as
+	// chosen, even while the slider passes over its hue.
+	let custom = $state(untrack(() => !ACCENT_PRESETS.some((option) => option.hue === initial.hue)));
 
 	const themes: { value: Theme; label: string; hint: string }[] = [
 		{ value: 'system', label: 'System', hint: 'Follows your device' },
@@ -31,7 +34,8 @@
 			pages === DEFAULT_APPEARANCE.pages
 	);
 
-	function choose(next: Partial<Appearance>) {
+	function choose(next: Partial<Appearance>, fromSlider = false) {
+		if (next.hue !== undefined) custom = fromSlider;
 		theme = next.theme ?? theme;
 		hue = next.hue ?? hue;
 		pages = next.pages ?? pages;
@@ -85,7 +89,7 @@
 					type="radio"
 					name="{id}-accent"
 					value={option.hue}
-					checked={hue === option.hue}
+					checked={!custom && hue === option.hue}
 					onchange={() => choose({ hue: option.hue })}
 				/>
 				<span class="dot" style:--h={option.hue} aria-hidden="true"></span>
@@ -102,8 +106,8 @@
 			max="359"
 			step="1"
 			value={hue}
-			oninput={(event) => choose({ hue: Number(event.currentTarget.value) })}
-			aria-valuetext={preset ? preset.name : `Hue ${hue}`}
+			oninput={(event) => choose({ hue: Number(event.currentTarget.value) }, true)}
+			aria-valuetext={preset && !custom ? preset.name : `Hue ${hue}`}
 		/>
 	</label>
 </fieldset>

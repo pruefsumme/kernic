@@ -176,6 +176,10 @@ test('the look of the app can be chosen and is there from the first byte', async
 	expect((await accent()).trim()).toBe('155');
 	await page.getByLabel('Any other colour').fill('20');
 	expect((await accent()).trim()).toBe('20');
+	// Passing over a named colour's hue with the slider does not select that colour.
+	await page.getByLabel('Any other colour').fill('155');
+	await expect(page.getByRole('radio', { name: 'Green' })).not.toBeChecked();
+	await page.getByLabel('Any other colour').fill('20');
 
 	// The server sends the next page in that look, before any script runs.
 	const html = await (await page.request.get('/account')).text();
