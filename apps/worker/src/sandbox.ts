@@ -13,6 +13,8 @@ export interface Toolchain {
 	prlimitPath: string;
 	bwrapPath: string | null;
 	setprivPath: string | null;
+	/** The Tinymist language server, or null if it is not installed. */
+	tinymistPath: string | null;
 }
 
 export interface JobPaths {
@@ -50,7 +52,11 @@ function findExecutable(name: string): string | null {
 }
 
 /** Resolves the binaries the worker needs and fails early if the configured sandbox is unavailable. */
-export async function detectToolchain(typstBin: string, sandbox: SandboxMode): Promise<Toolchain> {
+export async function detectToolchain(
+	typstBin: string,
+	sandbox: SandboxMode,
+	tinymistBin = 'tinymist'
+): Promise<Toolchain> {
 	const typstPath = findExecutable(typstBin);
 	if (!typstPath) throw new Error(`Typst binary "${typstBin}" was not found`);
 
@@ -75,7 +81,14 @@ export async function detectToolchain(typstBin: string, sandbox: SandboxMode): P
 	const { stdout } = await execFileAsync(typstPath, ['--version'], { timeout: 10_000 });
 	const typstVersion = /typst (\S+)/.exec(stdout)?.[1] ?? stdout.trim();
 
-	return { typstPath, typstVersion, prlimitPath, bwrapPath, setprivPath };
+	return {
+		typstPath,
+		typstVersion,
+		prlimitPath,
+		bwrapPath,
+		setprivPath,
+		tinymistPath: findExecutable(tinymistBin)
+	};
 }
 
 /**
@@ -375,6 +388,135 @@ export function buildCompileCommand(
 			toolchain.bwrapPath,
 			...bwrapArgs,
 			...typstArgs(mode, format, entry, inside, limits, pdf)
+		],
+		cwd: paths.sourceDir,
+		env: {}
+	};
+}
+
+/** The directories of one language server. */
+export interface LanguagePaths {
+	/** The project as the server may read it. */
+	sourceDir: string;
+	/** Holds `typst/packages/<namespace>/<name>/<version>`, where the server looks for packages. */
+	cacheDir: string;
+	/** The only place the server may write. */
+	scratchDir: string;
+}
+
+const LANGUAGE_INSIDE_BWRAP: LanguagePaths = {
+	sourceDir: '/job/src',
+	cacheDir: '/job/cache',
+	scratchDir: '/tmp'
+};
+
+/** Where the language server sees its files, which is what the paths in its answers refer to. */
+export function languageView(sandbox: SandboxMode, paths: LanguagePaths): LanguagePaths {
+	return sandbox === 'bwrap' ? LANGUAGE_INSIDE_BWRAP : paths;
+}
+
+/**
+ * Builds the command that runs the Tinymist language server for one project,
+ * speaking the language-server protocol on its standard input and output.
+ *
+ * It is confined like a compiler that stays running: resource limits always,
+ * and with a sandbox only its own copy of the project to read.
+ */
+export function buildLanguageServerCommand(
+	toolchain: Toolchain,
+	sandbox: SandboxMode,
+	paths: LanguagePaths,
+	limits: CompileLimits
+): Command {
+	if (!toolchain.tinymistPath) throw new Error('Tinymist is not installed');
+	const limitsPrefix = [...rlimitArgs(limits, 'watch'), '--'];
+	const args = ['lsp'];
+	const environment = (view: LanguagePaths) => ({
+		PATH: '/usr/local/bin:/usr/bin:/bin',
+		HOME: view.scratchDir,
+		// Packages are looked up below the cache directory; nothing else is kept there.
+		XDG_CACHE_HOME: view.cacheDir,
+		XDG_DATA_HOME: path.join(view.scratchDir, 'data'),
+		XDG_CONFIG_HOME: path.join(view.scratchDir, 'config')
+	});
+
+	if (sandbox === 'none') {
+		const wrapper = toolchain.setprivPath
+			? [toolchain.setprivPath, '--pdeathsig', 'KILL', '--']
+			: [];
+		return {
+			file: toolchain.prlimitPath,
+			args: [...limitsPrefix, ...wrapper, toolchain.tinymistPath, ...args],
+			cwd: paths.sourceDir,
+			env: environment(paths)
+		};
+	}
+
+	if (sandbox === 'landlock') {
+		if (!toolchain.setprivPath) throw new Error('setpriv is not available');
+		return {
+			file: toolchain.prlimitPath,
+			args: [
+				...limitsPrefix,
+				toolchain.setprivPath,
+				'--pdeathsig',
+				'KILL',
+				'--landlock-access',
+				'fs',
+				...systemReadRules(),
+				'--landlock-rule',
+				`path-beneath:read-file,execute:${toolchain.tinymistPath}`,
+				'--landlock-rule',
+				`path-beneath:${READ}:${paths.sourceDir}`,
+				'--landlock-rule',
+				`path-beneath:${READ}:${paths.cacheDir}`,
+				'--landlock-rule',
+				`path-beneath:${READ_WRITE},make-dir,remove-dir:${paths.scratchDir}`,
+				'--',
+				toolchain.tinymistPath,
+				...args
+			],
+			cwd: paths.sourceDir,
+			env: environment(paths)
+		};
+	}
+
+	if (!toolchain.bwrapPath) throw new Error('bubblewrap is not available');
+	const inside = LANGUAGE_INSIDE_BWRAP;
+	const setenv = Object.entries(environment(inside)).flatMap(([name, value]) =>
+		name === 'PATH' ? ['--setenv', name, '/usr/bin:/bin'] : ['--setenv', name, value]
+	);
+	return {
+		file: toolchain.prlimitPath,
+		args: [
+			...limitsPrefix,
+			toolchain.bwrapPath,
+			'--unshare-all',
+			'--die-with-parent',
+			'--new-session',
+			'--clearenv',
+			...setenv,
+			...systemMounts(),
+			'--proc',
+			'/proc',
+			'--dev',
+			'/dev',
+			'--tmpfs',
+			'/tmp',
+			'--ro-bind',
+			toolchain.tinymistPath,
+			'/kernic/tinymist',
+			'--ro-bind',
+			paths.sourceDir,
+			inside.sourceDir,
+			'--ro-bind',
+			paths.cacheDir,
+			inside.cacheDir,
+			'--chdir',
+			inside.sourceDir,
+			'--',
+			'/kernic/tinymist',
+			...args
 		],
 		cwd: paths.sourceDir,
 		env: {}

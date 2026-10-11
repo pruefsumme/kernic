@@ -76,7 +76,7 @@ const PACKAGE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const PACKAGE_VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 
 /** Validates a list of `{ path, sha256 }` entries; `what` names it in error messages. */
-function parseFileList(files: unknown, what: string): SnapshotFile[] {
+export function parseFileList(files: unknown, what: string): SnapshotFile[] {
 	if (!Array.isArray(files) || files.length === 0) {
 		throw new InvalidRequestError(`${what} must be a non-empty array`);
 	}
@@ -99,7 +99,7 @@ function parseFileList(files: unknown, what: string): SnapshotFile[] {
 	return result;
 }
 
-function parsePackages(packages: unknown): PackageFiles[] {
+export function parsePackages(packages: unknown): PackageFiles[] {
 	if (packages === undefined) return [];
 	if (!Array.isArray(packages)) throw new InvalidRequestError('packages must be an array');
 

@@ -18,11 +18,22 @@ export interface WorkerConfig {
 	token: string;
 	workDir: string;
 	typstBin: string;
+	/** The Tinymist language server. Editor assistance is off where it is not installed. */
+	tinymistBin: string;
 	sandbox: SandboxMode;
 	/** Optional read-only directory with vendored Typst packages (`--package-path`). */
 	packageDir: string | null;
 	limits: CompileLimits;
 	warm: WarmLimits;
+	language: LanguageLimits;
+}
+
+/** Bounds for the language servers that assist people while they write. */
+export interface LanguageLimits {
+	/** Editors that may have a language server at once; 0 turns the feature off. */
+	maxSessions: number;
+	/** A server whose editor sent nothing for this long is stopped. */
+	idleMs: number;
 }
 
 /**
@@ -88,6 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
 		token,
 		workDir: path.resolve(env.KERNIC_WORKER_DIR ?? path.join(tmpdir(), 'kernic-worker')),
 		typstBin: env.KERNIC_TYPST_BIN ?? 'typst',
+		tinymistBin: env.KERNIC_TINYMIST_BIN ?? 'tinymist',
 		sandbox,
 		packageDir: env.KERNIC_WORKER_PACKAGE_DIR ? path.resolve(env.KERNIC_WORKER_PACKAGE_DIR) : null,
 		limits: {
@@ -102,6 +114,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
 			maxConcurrent: integer(env, 'KERNIC_WORKER_CONCURRENCY', 2),
 			maxQueued: integer(env, 'KERNIC_WORKER_QUEUE', 16, 0),
 			typstJobs: integer(env, 'KERNIC_TYPST_JOBS', 2)
+		},
+		language: {
+			maxSessions: integer(env, 'KERNIC_LANGUAGE_SESSIONS', 4, 0),
+			idleMs: integer(env, 'KERNIC_LANGUAGE_IDLE_SECONDS', 600) * 1000
 		},
 		warm: {
 			maxSessions: integer(env, 'KERNIC_WARM_SESSIONS', 2, 0),

@@ -1,20 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { closeSync, openSync, readdirSync, readFileSync } from 'node:fs';
-import { mkdir, open, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { collectArtifacts, isOutputName, type OutputCache } from './artifacts.ts';
 import type { BlobStore } from './blobs.ts';
-import {
-	failure,
-	materialize,
-	MissingBlobsError,
-	type CompileRequest,
-	type CompileResult,
-	type SnapshotFile
-} from './compile.ts';
+import { failure, MissingBlobsError, type CompileRequest, type CompileResult } from './compile.ts';
 import type { CompileLimits, SandboxMode, WarmLimits } from './config.ts';
 import { hasErrors, hideJobPaths, parseDiagnostics } from './diagnostics.ts';
+import { packagePaths, syncTree } from './sync-tree.ts';
 import {
 	buildCompileCommand,
 	compilerView,
@@ -444,45 +438,14 @@ class Session {
 	}
 
 	async #sync(request: CompileRequest): Promise<void> {
-		this.#files = await this.#syncTree(this.#paths.sourceDir, this.#files, request.files);
-		this.#packageFiles = await this.#syncTree(
+		const { blobs } = this.#options;
+		this.#files = await syncTree(blobs, this.#paths.sourceDir, this.#files, request.files);
+		this.#packageFiles = await syncTree(
+			blobs,
 			this.#paths.packageCacheDir,
 			this.#packageFiles,
-			request.packages.flatMap((item) =>
-				item.files.map((file) => ({
-					path: path.join(item.namespace, item.name, item.version, file.path),
-					sha256: file.sha256
-				}))
-			)
+			packagePaths(request.packages)
 		);
-	}
-
-	/** Makes the files below `root` match `wanted`, touching only what differs. */
-	async #syncTree(
-		root: string,
-		current: Map<string, string>,
-		wanted: SnapshotFile[]
-	): Promise<Map<string, string>> {
-		const next = new Map(wanted.map((file) => [file.path, file.sha256]));
-
-		for (const stale of current.keys()) {
-			if (next.has(stale)) continue;
-			await rm(path.join(root, stale), { force: true });
-			// Remove folders this emptied, so that a file can take a folder's name.
-			let folder = path.dirname(stale);
-			while (folder !== '.') {
-				const removed = await rmdir(path.join(root, folder)).then(
-					() => true,
-					() => false
-				);
-				if (!removed) break;
-				folder = path.dirname(folder);
-			}
-		}
-
-		const changed = wanted.filter((file) => current.get(file.path) !== file.sha256);
-		await materialize(this.#options.blobs, changed, root);
-		return next;
 	}
 }
 

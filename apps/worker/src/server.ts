@@ -9,6 +9,13 @@ import {
 	parseCompileRequest
 } from './compile.ts';
 import type { WorkerConfig } from './config.ts';
+import {
+	LanguageSessions,
+	LanguageUnavailableError,
+	MAX_MESSAGE_BYTES,
+	parseLanguageRequest,
+	PROJECT_URI
+} from './language.ts';
 import { isSha256 } from './paths.ts';
 import { detectToolchain, listFontFamilies, type Toolchain } from './sandbox.ts';
 import { WarmSessions } from './sessions.ts';
@@ -52,13 +59,15 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 	response.end(payload);
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(
+	request: IncomingMessage,
+	maxBytes = MAX_REQUEST_JSON_BYTES
+): Promise<unknown> {
 	const chunks: Buffer[] = [];
 	let received = 0;
 	for await (const chunk of request as AsyncIterable<Buffer>) {
 		received += chunk.length;
-		if (received > MAX_REQUEST_JSON_BYTES)
-			throw new InvalidRequestError('request body is too large');
+		if (received > maxBytes) throw new InvalidRequestError('request body is too large');
 		chunks.push(chunk);
 	}
 	try {
@@ -76,7 +85,7 @@ export interface Worker {
 }
 
 export async function createWorker(config: WorkerConfig): Promise<Worker> {
-	const toolchain = await detectToolchain(config.typstBin, config.sandbox);
+	const toolchain = await detectToolchain(config.typstBin, config.sandbox, config.tinymistBin);
 
 	const blobs = new BlobStore(path.join(config.workDir, 'blobs'), {
 		maxBlobBytes: config.limits.maxBlobBytes,
@@ -94,6 +103,17 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 		packageDir: config.packageDir
 	});
 	await sessions.open();
+
+	const language = new LanguageSessions({
+		blobs,
+		toolchain,
+		sandbox: config.sandbox,
+		limits: config.limits,
+		language: config.language,
+		maxSourceBytes: config.warm.maxSourceBytes,
+		dir: path.join(config.workDir, 'language')
+	});
+	await language.open();
 
 	const compiler = new Compiler({
 		blobs,
@@ -125,7 +145,8 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 			sendJson(response, 200, {
 				ok: true,
 				typstVersion: toolchain.typstVersion,
-				sandbox: config.sandbox
+				sandbox: config.sandbox,
+				editorAssistance: language.available
 			});
 			return;
 		}
@@ -147,6 +168,49 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 			await blobs.put(sha256, request);
 			sendJson(response, 200, { ok: true });
 			return;
+		}
+
+		const languageMatch = /^\/lsp\/([A-Za-z0-9_-]{1,64})(\/messages|\/stream)?$/.exec(url.pathname);
+		if (languageMatch) {
+			const [, name, part] = languageMatch as unknown as [string, string, string | undefined];
+
+			if (request.method === 'POST' && part === undefined) {
+				await language.start(name, parseLanguageRequest(await readJson(request), config.limits));
+				sendJson(response, 200, { ok: true, rootUri: PROJECT_URI });
+				return;
+			}
+			if (request.method === 'POST' && part === '/messages') {
+				const body = (await readJson(request, MAX_MESSAGE_BYTES)) as { messages?: unknown } | null;
+				if (!language.send(name, body?.messages))
+					sendJson(response, 404, { error: 'no such language server' });
+				else sendJson(response, 200, { ok: true });
+				return;
+			}
+			if (request.method === 'GET' && part === '/stream') {
+				request.resume();
+				// One message per line, for as long as the server and the listener last.
+				const stop = language.listen(name, (message) => {
+					if (message === null) response.end();
+					else response.write(`${message}\n`);
+				});
+				if (!stop) {
+					sendJson(response, 404, { error: 'no such language server' });
+					return;
+				}
+				response.writeHead(200, {
+					'content-type': 'application/x-ndjson',
+					'cache-control': 'no-store'
+				});
+				response.flushHeaders();
+				response.on('close', stop);
+				return;
+			}
+			if (request.method === 'DELETE' && part === undefined) {
+				request.resume();
+				await language.stop(name);
+				sendJson(response, 200, { ok: true });
+				return;
+			}
 		}
 
 		if (request.method === 'GET' && url.pathname === '/fonts') {
@@ -181,6 +245,8 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 			}
 			if (error instanceof MissingBlobsError) {
 				sendJson(response, 409, { error: error.message, missing: error.missing });
+			} else if (error instanceof LanguageUnavailableError) {
+				sendJson(response, 503, { error: error.message });
 			} else if (error instanceof InvalidRequestError) {
 				sendJson(response, 400, { error: error.message });
 			} else if (error instanceof BlobError) {
@@ -192,5 +258,11 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 		});
 	});
 
-	return { server, toolchain, close: () => sessions.close() };
+	return {
+		server,
+		toolchain,
+		close: async () => {
+			await Promise.all([sessions.close(), language.close()]);
+		}
+	};
 }
