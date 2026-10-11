@@ -10,7 +10,7 @@ import {
 } from './compile.ts';
 import type { WorkerConfig } from './config.ts';
 import { isSha256 } from './paths.ts';
-import { detectToolchain, type Toolchain } from './sandbox.ts';
+import { detectToolchain, listFontFamilies, type Toolchain } from './sandbox.ts';
 import { WarmSessions } from './sessions.ts';
 
 const MAX_REQUEST_JSON_BYTES = 2 * 1024 * 1024;
@@ -107,6 +107,8 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 	await compiler.open();
 
 	const limiter = new Limiter(config.limits.maxConcurrent, config.limits.maxQueued);
+	// Installed fonts do not change while the worker runs.
+	let fontFamilies: Promise<string[]> | null = null;
 	const expectedToken = createHash('sha256').update(config.token).digest();
 
 	function isAuthorized(request: IncomingMessage): boolean {
@@ -144,6 +146,15 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 			}
 			await blobs.put(sha256, request);
 			sendJson(response, 200, { ok: true });
+			return;
+		}
+
+		if (request.method === 'GET' && url.pathname === '/fonts') {
+			fontFamilies ??= listFontFamilies(toolchain).catch((error: unknown) => {
+				fontFamilies = null;
+				throw error;
+			});
+			sendJson(response, 200, { families: await fontFamilies });
 			return;
 		}
 

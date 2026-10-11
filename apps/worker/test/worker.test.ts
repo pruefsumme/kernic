@@ -37,6 +37,19 @@ describe('compile worker', () => {
 		assert.match(body.typstVersion, /^\d+\.\d+/);
 	});
 
+	test('lists the font families documents can use', async () => {
+		const unauthorized = await fetch(`${harness.baseUrl}/fonts`);
+		assert.equal(unauthorized.status, 401);
+
+		const response = await fetch(`${harness.baseUrl}/fonts`, { headers: auth });
+		assert.equal(response.status, 200);
+		const { families } = (await response.json()) as { families: string[] };
+		// Built into the compiler, so present on every machine.
+		assert.ok(families.includes('Libertinus Serif'));
+		assert.ok(families.includes('New Computer Modern'));
+		assert.ok(families.every((family) => family === family.trim() && family.length > 0));
+	});
+
 	test('rejects requests without the worker token', async () => {
 		const response = await fetch(`${harness.baseUrl}/compile`, { method: 'POST', body: '{}' });
 		assert.equal(response.status, 401);

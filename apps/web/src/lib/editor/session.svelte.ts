@@ -82,6 +82,8 @@ export class EditorSession {
 
 	exporting = $state(false);
 	exportError = $state<string | null>(null);
+	/** Font families installed on the server, for completion; loaded once. */
+	fonts = $state.raw<string[]>([]);
 	/** Number of files being uploaded right now. */
 	uploading = $state(0);
 	/** Outcome of the latest upload, until dismissed: what was stored and what was not. */

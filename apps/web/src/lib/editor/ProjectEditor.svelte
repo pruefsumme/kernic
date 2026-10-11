@@ -77,6 +77,11 @@
 					: session.entries.find((entry) => entry.type === 'file')?.path;
 		if (initial) void open(initial);
 		session.requestCompile();
+		// Only used for completion, so the editor does not wait for it or mind if it fails.
+		void session.api.fonts().then(
+			(families) => (session.fonts = families),
+			() => {}
+		);
 
 		// Files may be dropped anywhere on this screen, the file list included.
 		// Listening on the window, before the editor does, also keeps the browser
@@ -625,6 +630,7 @@
 								text={file.text}
 								readOnly={!canWrite}
 								diagnostics={fileDiagnostics}
+								fonts={session.fonts}
 								onchange={() => session.noteEdit()}
 								onsave={() => void session.save()}
 								oncursor={(line, column) => (cursor = { line, column })}

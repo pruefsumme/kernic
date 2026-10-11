@@ -2,7 +2,8 @@ import {
 	autocompletion,
 	closeBrackets,
 	closeBracketsKeymap,
-	completionKeymap
+	completionKeymap,
+	type CompletionSource
 } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import {
@@ -196,12 +197,35 @@ export function toEditorDiagnostics(
 	return result;
 }
 
+/**
+ * Completes font families inside `font: "…"` (also within a list of fallbacks),
+ * from the fonts installed on the server.
+ */
+function fontCompletions(families: () => string[]): CompletionSource {
+	return (context) => {
+		const line = context.state.doc.lineAt(context.pos);
+		const before = line.text.slice(0, context.pos - line.from);
+		const typed = /\bfont:\s*\(?\s*(?:"[^"]*"\s*,\s*)*"([^"]*)$/.exec(before)?.[1];
+		if (typed === undefined) return null;
+
+		const options = families().map((label) => ({ label, type: 'text' }));
+		if (options.length === 0) return null;
+		return { from: context.pos - typed.length, options, validFor: /^[^"]*$/ };
+	};
+}
+
 export function editorExtensions(options: {
+	/** Font families to offer; read whenever completion starts, so a late list is picked up. */
+	fonts: () => string[];
 	readOnly: boolean;
 	onChange: () => void;
 	onCursor: (line: number, column: number) => void;
 	onSave: () => void;
 }): Extension {
+	// One object for the life of the editor: completion restarts whenever it is
+	// handed a source it has not seen before.
+	const completionData = [{ autocomplete: fontCompletions(options.fonts) }];
+
 	return [
 		lineNumbers(),
 		highlightActiveLineGutter(),
@@ -219,6 +243,7 @@ export function editorExtensions(options: {
 		highlightSelectionMatches(),
 		EditorView.lineWrapping,
 
+		EditorState.languageData.of(() => completionData),
 		typst_lezer().language,
 		typstLezerIndentService,
 		typstLezerListKeymap,

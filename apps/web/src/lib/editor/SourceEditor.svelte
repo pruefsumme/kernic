@@ -18,6 +18,7 @@
 		text,
 		readOnly,
 		diagnostics,
+		fonts,
 		view = $bindable(),
 		onchange,
 		onsave,
@@ -28,6 +29,8 @@
 		readOnly: boolean;
 		/** Compiler diagnostics for this file. */
 		diagnostics: Diagnostic[];
+		/** Font families installed on the server, offered inside `font: "…"`. */
+		fonts: string[];
 		view?: EditorView;
 		onchange: () => void;
 		onsave: () => void;
@@ -43,6 +46,7 @@
 			state: EditorState.create({
 				doc: text,
 				extensions: editorExtensions({
+					fonts: () => fonts,
 					readOnly,
 					onSave: onsave,
 					onCursor: oncursor,

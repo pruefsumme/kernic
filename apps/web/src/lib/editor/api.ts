@@ -205,6 +205,12 @@ export function createProjectApi(projectId: string) {
 			return (await request(`${base}/upload`, { method: 'POST', body: form })).json();
 		},
 
+		/** Font families installed on the server; empty if they cannot be listed right now. */
+		async fonts(): Promise<string[]> {
+			const body = (await (await request('/api/fonts')).json()) as { families: string[] };
+			return body.families;
+		},
+
 		async compile(format: 'svg' | 'pdf', options?: PdfOptions): Promise<CompileJob> {
 			return (
 				(await (await request(`${base}/compile`, json({ format, options }))).json()) as {

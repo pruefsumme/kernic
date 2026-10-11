@@ -78,6 +78,22 @@ export async function detectToolchain(typstBin: string, sandbox: SandboxMode): P
 	return { typstPath, typstVersion, prlimitPath, bwrapPath, setprivPath };
 }
 
+/**
+ * The font families documents can use on this worker: those built into the
+ * compiler and those installed on the system. No document is involved, so this
+ * runs the compiler directly.
+ */
+export async function listFontFamilies(toolchain: Toolchain): Promise<string[]> {
+	const { stdout } = await execFileAsync(toolchain.typstPath, ['fonts'], {
+		timeout: 30_000,
+		maxBuffer: 4 * 1024 * 1024
+	});
+	return stdout
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean);
+}
+
 const READ = 'read-file,read-dir';
 const READ_EXECUTE = `${READ},execute`;
 const READ_WRITE = `${READ},write-file,make-reg,remove-file,truncate`;

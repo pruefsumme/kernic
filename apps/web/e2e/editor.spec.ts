@@ -322,6 +322,28 @@ test('a PDF can be exported to a standard and for selected pages', async ({ page
 	await expect(dialog).toBeVisible();
 });
 
+test('installed fonts are completed, and a missing font is explained', async ({ page }) => {
+	await createProject(page, 'Blank document', 'Fonts');
+	await expect(previewStatus(page)).toContainText('Up to date');
+
+	// Inside font: "…" the families installed on the server are offered.
+	await appendSource(page, '\n#set text(font: "Libert');
+	const completions = page.locator('.cm-tooltip-autocomplete');
+	await expect(completions.getByText('Libertinus Serif', { exact: true })).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect.poll(() => editorText(page)).toContain('font: "Libertinus Serif"');
+	await expect(saveState(page)).toContainText('Saved');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	await expect(page.getByRole('button', { name: /Issues/ })).not.toContainText(/\d/);
+
+	// A font that is not installed is named as written, with what to do about it.
+	await appendSource(page, '\n#set text(font: "Fancy Grotesk")\n');
+	await page.getByRole('button', { name: /Issues/ }).click();
+	await expect(panel(page, 'Issues')).toContainText(
+		'The font “Fancy Grotesk” is not installed on this server'
+	);
+});
+
 test('zoom changes the size of the rendered pages', async ({ page }) => {
 	await createProject(page, 'Blank document', 'Zoom');
 	await expect(pages(page)).toHaveCount(1);

@@ -89,6 +89,45 @@ async function explainPackageErrors(
 	return explained;
 }
 
+const UNKNOWN_FONT = /^unknown font family: (.+)$/;
+
+/**
+ * Typst names a missing font in lower case and does not say what to do. Name
+ * it as it is written in the source, and say how to get a font that works.
+ */
+export async function explainFontWarnings(
+	root: string,
+	diagnostics: Diagnostic[]
+): Promise<Diagnostic[]> {
+	const explained: Diagnostic[] = [];
+	for (const diagnostic of diagnostics) {
+		const family = UNKNOWN_FONT.exec(diagnostic.message)?.[1];
+		if (!family) {
+			explained.push(diagnostic);
+			continue;
+		}
+
+		let written = family;
+		if (diagnostic.path && diagnostic.line && !diagnostic.path.startsWith('@')) {
+			const source = await fs
+				.readFile(path.join(root, ...diagnostic.path.split('/')), 'utf8')
+				.catch(() => '');
+			const line = source.split('\n')[diagnostic.line - 1] ?? '';
+			for (const [, quoted] of line.matchAll(/"([^"]+)"/g)) {
+				if (quoted!.toLowerCase() === family) written = quoted!;
+			}
+		}
+		explained.push({
+			...diagnostic,
+			message:
+				`The font “${written}” is not installed on this server, so another font is used. ` +
+				'Type font: " in the editor to see the installed families, or upload the ' +
+				"font's files (.ttf, .otf) into the project."
+		});
+	}
+	return explained;
+}
+
 const MAX_ATTEMPTS = 4;
 
 export interface CompileOptions {
@@ -138,7 +177,10 @@ async function compileOnce(
 		snapshot,
 		result: {
 			...result,
-			diagnostics: await explainPackageErrors(root, result.diagnostics, failures)
+			diagnostics: await explainFontWarnings(
+				root,
+				await explainPackageErrors(root, result.diagnostics, failures)
+			)
 		},
 		packageFailures: failures
 	};
