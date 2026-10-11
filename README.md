@@ -47,6 +47,7 @@ pnpm check   # type-check both packages
 pnpm lint    # prettier + eslint
 pnpm test    # unit tests; the worker tests compile real documents with the Typst CLI
 pnpm test:e2e  # browser tests against the production build (needs the dev PostgreSQL)
+pnpm test:durability  # kills the app while it saves, again and again, and checks nothing is lost
 ```
 
 The end-to-end tests build the app, start it together with a worker on separate ports, and use

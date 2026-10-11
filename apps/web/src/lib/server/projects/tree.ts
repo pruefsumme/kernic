@@ -145,6 +145,26 @@ export interface WriteOptions {
 	baseHash?: string | null;
 }
 
+/** Where a file is written before it is moved into the tree: a folder beside it. */
+const temporaryDirectoryOf = (root: string) => `${root}.tmp`;
+
+/**
+ * Removes what interrupted saves left behind in the projects under
+ * `projectsDir`. Only for startup, when no save can be in progress: a save
+ * that was cut off never reached its file, so its temporary copy is of no use.
+ */
+export async function removeInterruptedWrites(projectsDir: string): Promise<number> {
+	let removed = 0;
+	for (const project of await fs.readdir(projectsDir).catch(() => [])) {
+		const directory = temporaryDirectoryOf(path.join(projectsDir, project, 'tree'));
+		for (const name of await fs.readdir(directory).catch(() => [])) {
+			await fs.rm(path.join(directory, name), { recursive: true, force: true });
+			removed++;
+		}
+	}
+	return removed;
+}
+
 /** Writes a file atomically, creating parent folders as needed. Returns the new content hash. */
 export async function writeTreeFile(
 	root: string,
@@ -196,7 +216,7 @@ export async function writeTreeFile(
 	// The temporary file lives beside the tree, not in it, so that a concurrent
 	// listing, snapshot or checkpoint never sees a half-written file. Being on
 	// the same file system, the rename into place is still atomic.
-	const temporaryDirectory = `${root}.tmp`;
+	const temporaryDirectory = temporaryDirectoryOf(root);
 	await fs.mkdir(temporaryDirectory, { recursive: true });
 	const temporary = path.join(temporaryDirectory, randomUUID());
 	try {

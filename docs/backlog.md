@@ -75,8 +75,8 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
   and end-to-end tests and builds both images for x86-64 and ARM64.
 - An upgrade test: start the previous release's images with data, upgrade, and run the suite.
-- A durability test: kill the app with `SIGKILL` in a loop while saving and verify that no file
-  is ever empty or half-written; the same for the database with a failed migration.
+- A failed migration: start the app against a database where a migration fails half-way and
+  check that it stops without leaving the schema half-changed.
 - A real domain with an automatic certificate, once there is a host to try it on.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
@@ -141,6 +141,9 @@ details.
   renderings of a page, hover and press feedback, paper-like thumbnails, quiet scrollbars.
 - Account page (name, password, sessions), people management by invitation and reset links,
   activity log.
+- Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
+  and files, history and the restarted app are examined; leftovers of cut-off saves are
+  cleared at startup.
 - Search in all files of a project (Ctrl+Shift+F): plain text, any capitalisation, grouped by
   file; a match opens the file at its place.
 - Fonts in the editor: the families installed on the server are completed inside `font: "…"`,

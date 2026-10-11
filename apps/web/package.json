@@ -15,7 +15,8 @@
 		"test:watch": "vitest",
 		"test": "vitest run",
 		"templates:previews": "sh scripts/render-template-previews.sh",
-		"test:e2e": "vite build && playwright test"
+		"test:e2e": "vite build && playwright test",
+		"test:durability": "vite build && node e2e/durability.ts"
 	},
 	"devDependencies": {
 		"@codemirror/autocomplete": "^6.20.3",

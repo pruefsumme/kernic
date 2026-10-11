@@ -9,6 +9,7 @@ import {
 	listTree,
 	moveTreeEntry,
 	readTreeFile,
+	removeInterruptedWrites,
 	sha256,
 	writeTreeFile,
 	type TreeLimits
@@ -84,6 +85,28 @@ describe('reading and writing', () => {
 		);
 		expect(await readdir(outside)).toEqual(['secret.txt']);
 		expect(await listTree(root)).toEqual([]);
+	});
+});
+
+describe('saves that were interrupted', () => {
+	it('leaves nothing behind after a normal save, and clears what a killed one left', async () => {
+		// Laid out like the data directory: <projects>/<project id>/tree.
+		const projects = path.dirname(path.dirname(root));
+		const project = path.join(projects, 'project-1');
+		const tree = path.join(project, 'tree');
+		await mkdir(tree, { recursive: true });
+
+		await writeTreeFile(tree, 'main.typ', text('saved'), { limits });
+		expect(await readdir(`${tree}.tmp`)).toEqual([]);
+
+		await writeFile(path.join(`${tree}.tmp`, 'half-written'), 'cut off');
+		expect(await removeInterruptedWrites(projects)).toBe(1);
+		expect(await readdir(`${tree}.tmp`)).toEqual([]);
+		// The files themselves are not touched.
+		expect((await readTreeFile(tree, 'main.typ')).toString()).toBe('saved');
+		expect(await removeInterruptedWrites(path.join(projects, 'missing'))).toBe(0);
+
+		await rm(project, { recursive: true, force: true });
 	});
 });
 

@@ -119,7 +119,11 @@ signed-in user's files, and everything fetched from outside (packages).
 
 - Saving: content is written to a temporary file beside the project, flushed to disk, renamed
   into place, and the directory is flushed. A crash or power cut leaves the old or the new file.
-  (Reasoning and unit tests; power loss itself was not simulated.)
+  **Tested** by killing the app (`SIGKILL`) 100 times while three files were being saved and
+  checkpoints created (`pnpm test:durability`): no file was ever empty or incomplete, every
+  save the server had acknowledged was on disk, the Git history passed `git fsck`, and the
+  restarted app served the same content and accepted new saves and checkpoints. A killed
+  process is not a power cut; power loss itself was not simulated.
 - Two tabs or two people: a save names the version it started from and is refused if the file
   changed meanwhile; the editor then offers both versions. **Tested.**
 - Leaving the editor, losing the connection, being signed out: pending text is kept and sent
@@ -172,6 +176,10 @@ signed-in user's files, and everything fetched from outside (packages).
     links, and an append-only activity log.
 14. Compiler messages such as "file not found" contained the directory a job ran in on the
     server. They now name the file as it is called in the project.
+15. A save that was cut off by a crash left its temporary copy beside the project for good
+    (found by the kill test: a few per hundred kills). They are now removed when the app starts.
+16. The development server opened a new database pool on every reload of server code until
+    PostgreSQL refused connections. Reloads share one pool now; production was not affected.
 
 ## Open
 

@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import * as fs from 'node:fs/promises';
+import path from 'node:path';
 import {
 	clearSessionCookie,
 	readSessionCookie,
@@ -13,6 +14,7 @@ import { dataDir } from '#lib/server/config.ts';
 import { sql } from '#lib/server/db/client.ts';
 import { bundledMigrations, migrate } from '#lib/server/db/migrate.ts';
 import { startImportCleanup } from '#lib/server/imports/imports.ts';
+import { removeInterruptedWrites } from '#lib/server/projects/tree.ts';
 
 export const init: ServerInit = async () => {
 	// A promise nobody awaited must not take the whole server down with everyone's
@@ -26,6 +28,10 @@ export const init: ServerInit = async () => {
 	if (applied.length > 0) console.log(`Applied database migrations: ${applied.join(', ')}`);
 
 	await fs.mkdir(dataDir, { recursive: true });
+	const leftovers = await removeInterruptedWrites(path.join(dataDir, 'projects'));
+	if (leftovers > 0) {
+		console.log(`Removed ${leftovers} temporary file(s) of saves that were interrupted.`);
+	}
 	await deleteExpiredSessions();
 	await prepareSetup();
 	await startJobDispatcher();
