@@ -4,8 +4,8 @@ A self-hosted, Git-first workspace for writing [Typst](https://typst.app/docs/) 
 multi-file project in the browser, see the rendered pages next to the source, and export a PDF.
 
 > Early development. Writing alone or in a shared workspace works and can be self-hosted;
-> checkpoints can be pushed to a Git forge, but pulling from one and real-time collaboration are
-> not built yet. See
+> checkpoints can be pushed to and pulled from a Git forge, but real-time collaboration and
+> creating a project from a repository are not built yet. See
 > [Status](#status) and the [backlog](docs/backlog.md).
 
 To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**. What has
@@ -103,8 +103,9 @@ Working:
 - Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
   restore of any earlier version without losing the current one, ZIP download of a version;
   automatic snapshots in between
-- Pushing checkpoints to a Git repository on a forge (Forgejo, Gitea) the administrator allows,
-  with an access token stored encrypted
+- Pushing checkpoints to, and pulling changes from, a Git repository on a forge (Forgejo, Gitea)
+  the administrator allows, with an access token stored encrypted; files both sides changed are
+  settled by choosing a version
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
 - Typst Universe packages: downloaded by the app from the registry, cached, and passed to the
@@ -114,7 +115,6 @@ Working:
 Not built yet:
 
 - Importing from a Git repository
-- Pulling changes made elsewhere from a Git repository
 - Review comments on a shared document
 - Real-time collaboration
 - A preview that follows each keystroke (it follows a pause in typing of 0.4 s)

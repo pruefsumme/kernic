@@ -3,6 +3,8 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { promisify } from 'node:util';
+import { InvalidPathError, normalizeProjectPath } from '../projects/paths';
+import type { TreeLimits } from '../projects/tree';
 
 /**
  * Version history of a project, kept in a Git repository next to its files.
@@ -77,6 +79,10 @@ const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_DIFF_LINES_PER_FILE = 1500;
 const GIT_TIMEOUT_MS = 60_000;
 const GIT_REMOTE_TIMEOUT_MS = 120_000;
+/** Where the newest state of the repository elsewhere is kept, apart from the project's own branch. */
+const REMOTE_REF = 'refs/kernic/remote/head';
+/** How often a running fetch is checked for how much it has brought in. */
+const FETCH_WATCH_MS = 400;
 const FIELD = '\x1f';
 
 const SNAPSHOT_REFS = 'refs/kernic/snapshots/';
@@ -437,12 +443,15 @@ export class ProjectHistory {
 	// token travels in the environment of the one Git process that needs it:
 	// never in its arguments, the repository's configuration or a message.
 
-	async #gitRemote(args: string[], remote: Remote): Promise<string> {
+	async #gitRemote(
+		args: string[],
+		remote: Remote,
+		watch?: { maxBytes: number; baseline: number }
+	): Promise<string> {
 		const protocol = new URL(remote.url).protocol.slice(0, -1);
 		const credentials = Buffer.from(`${remote.username}:${remote.token}`).toString('base64');
 		try {
-			const { stdout } = await execFileAsync(
-				'git',
+			const { stdout } = await runGit(
 				this.#arguments([
 					// After `protocol.allow=never`: this one protocol, for this one command.
 					'-c',
@@ -460,14 +469,18 @@ export class ProjectHistory {
 					...args
 				]),
 				{
-					env: {
-						...this.#environment,
-						GIT_CONFIG_COUNT: '1',
-						GIT_CONFIG_KEY_0: `http.${remote.url}.extraHeader`,
-						GIT_CONFIG_VALUE_0: `Authorization: Basic ${credentials}`
-					},
-					maxBuffer: MAX_OUTPUT_BYTES,
-					timeout: GIT_REMOTE_TIMEOUT_MS
+					...this.#environment,
+					GIT_CONFIG_COUNT: '1',
+					GIT_CONFIG_KEY_0: `http.${remote.url}.extraHeader`,
+					GIT_CONFIG_VALUE_0: `Authorization: Basic ${credentials}`
+				},
+				{
+					timeoutMs: GIT_REMOTE_TIMEOUT_MS,
+					watch: watch && {
+						directory: path.join(this.#gitDir, 'objects', 'pack'),
+						maxBytes: watch.maxBytes,
+						baseline: watch.baseline
+					}
 				}
 			);
 			return stdout;
@@ -530,6 +543,304 @@ export class ProjectHistory {
 		);
 		return head;
 	}
+
+	/**
+	 * Brings in what the repository's branch has, without touching the project's
+	 * own branch or files: it is kept under a reference of its own until
+	 * `pull` merges it. Returns the commit the branch is at.
+	 *
+	 * Git is asked to check every object it receives, and to keep what arrives
+	 * in one pack file so that its growth can be watched: a fetch that brings in
+	 * more than `maxBytes` is stopped and what it wrote is removed.
+	 */
+	async fetchBranch(remote: Remote, maxBytes: number): Promise<string> {
+		await this.#ensureRepository();
+		const packs = path.join(this.#gitDir, 'objects', 'pack');
+		const baseline = await directoryBytes(packs);
+		const before = new Set(await fs.readdir(packs).catch(() => [] as string[]));
+		try {
+			await this.#gitRemote(
+				[
+					'-c',
+					'transfer.fsckObjects=true',
+					'-c',
+					'fetch.unpackLimit=1',
+					'-c',
+					'fetch.recurseSubmodules=false',
+					'fetch',
+					'--quiet',
+					'--no-tags',
+					'--no-recurse-submodules',
+					'--no-write-fetch-head',
+					remote.url,
+					`+refs/heads/${remote.branch}:${REMOTE_REF}`
+				],
+				remote,
+				{ maxBytes, baseline }
+			);
+		} catch (cause) {
+			// A fetch that was stopped leaves its half-written pack behind.
+			await this.#removeUnfinishedPacks();
+			throw cause;
+		}
+		// A transfer that was over before the watch could stop it is undone just the same.
+		if ((await directoryBytes(packs)) - baseline > maxBytes) {
+			// Not a garbage collection: this runs without the project's lock, and only
+			// the packs that arrived just now are removed.
+			await this.#git(['update-ref', '-d', REMOTE_REF]).catch(() => {});
+			for (const name of await fs.readdir(packs).catch(() => [] as string[])) {
+				if (!before.has(name)) await fs.rm(path.join(packs, name), { force: true });
+			}
+			throw new RemoteError('too-large');
+		}
+		return (await this.#git(['rev-parse', '--verify', `${REMOTE_REF}^{commit}`])).trim();
+	}
+
+	async #removeUnfinishedPacks(): Promise<void> {
+		const directory = path.join(this.#gitDir, 'objects', 'pack');
+		for (const name of await fs.readdir(directory).catch(() => [] as string[])) {
+			if (name.startsWith('tmp_pack_')) await fs.rm(path.join(directory, name), { force: true });
+		}
+	}
+
+	/** Forgets what was fetched and frees the space its objects took. Needs the project's lock. */
+	async #discardFetched(): Promise<void> {
+		try {
+			await this.#git(['update-ref', '-d', REMOTE_REF]);
+			await this.#git(['gc', '--quiet', '--prune=now']);
+		} catch (cause) {
+			console.error('could not clean up after a fetch', cause);
+		}
+	}
+
+	/**
+	 * Checks that a commit's files are ones a project may hold, before any of
+	 * them is written anywhere: ordinary files only (no links, no submodules),
+	 * with names the project accepts and within its size limits.
+	 */
+	async #inspectTree(
+		treeish: string,
+		limits: TreeLimits
+	): Promise<{ bytes: number; files: number }> {
+		const output = await this.#git(['ls-tree', '-r', '-l', '-z', '--full-tree', treeish]);
+		let bytes = 0;
+		let files = 0;
+		for (const record of output.split('\0')) {
+			if (record === '') continue;
+			const entry = /^(\d+) (\w+) [0-9a-f]+ +(-|\d+)\t([\s\S]*)$/.exec(record);
+			if (!entry)
+				throw new PullError('unsafe-content', 'The repository holds something unreadable.');
+			const [, mode, type, size, name] = entry as unknown as [
+				string,
+				string,
+				string,
+				string,
+				string
+			];
+			if (type !== 'blob' || (mode !== '100644' && mode !== '100755')) {
+				throw new PullError(
+					'unsafe-content',
+					`“${name}” is ${type === 'commit' ? 'a submodule' : 'a link'}, not a file. Kernic keeps files only, so nothing was taken over.`
+				);
+			}
+			try {
+				if (normalizeProjectPath(name) !== name)
+					throw new InvalidPathError('Not in its usual form.');
+			} catch (cause) {
+				const reason = cause instanceof InvalidPathError ? ` ${cause.message}` : '';
+				throw new PullError(
+					'unsafe-content',
+					`“${name.replace(/\p{Cc}/gu, '?')}” is not a name a project can have.${reason} Nothing was taken over.`
+				);
+			}
+			const length = Number(size);
+			if (length > limits.maxFileBytes) {
+				throw new PullError(
+					'too-large',
+					`“${name}” is ${megabytes(length)}, more than a file in a project may be (${megabytes(limits.maxFileBytes)}). Nothing was taken over.`
+				);
+			}
+			bytes += length;
+			files++;
+		}
+		if (bytes > limits.maxProjectBytes || files > limits.maxProjectFiles) {
+			throw new PullError(
+				'too-large',
+				files > limits.maxProjectFiles
+					? `That would make ${files} files, more than a project may have (${limits.maxProjectFiles}). Nothing was taken over.`
+					: `That would make ${megabytes(bytes)}, more than a project may be (${megabytes(limits.maxProjectBytes)}). Nothing was taken over.`
+			);
+		}
+		return { bytes, files };
+	}
+
+	/** Runs a command that may exit with a code other than 0 and reports both. */
+	async #gitExit(args: string[]): Promise<{ code: number; stdout: string }> {
+		try {
+			return { code: 0, stdout: await this.#git(args) };
+		} catch (cause) {
+			const failure = cause as { code?: unknown; stdout?: unknown };
+			if (typeof failure.code === 'number') {
+				return { code: failure.code, stdout: String(failure.stdout ?? '') };
+			}
+			throw cause;
+		}
+	}
+
+	/**
+	 * Takes over what `fetchBranch` brought in.
+	 *
+	 * The current files are recorded as a checkpoint first, so that nothing is
+	 * lost and the pull can be undone by restoring it. If the project has not
+	 * changed since the repository's branch was last shared, the project simply
+	 * moves forward to it; otherwise the two are merged, computed without
+	 * touching any file. A merge that is clean is applied. One where both sides
+	 * changed the same file is not applied but reported, and applied once there
+	 * is a choice for each file (`choices`: keep this project's version or take
+	 * the repository's); no conflict markers ever reach the files.
+	 *
+	 * What comes in is checked before anything is written, as for an upload.
+	 */
+	async pull(options: {
+		/** The commit `fetchBranch` returned; refused if the fetched state has moved on since. */
+		theirs: string;
+		author: Author;
+		limits: TreeLimits;
+		/** How the repository is called in the history, such as `git.example.org/ada/thesis`. */
+		label: string;
+		choices?: Record<string, 'ours' | 'theirs'>;
+		/** With `choices`: the checkpoint the conflicts were found against. */
+		expectedOurs?: string;
+		/** Called with the size of what the project would become, before anything is written. */
+		beforeApply?: (incoming: { bytes: number; files: number }) => Promise<void>;
+	}): Promise<PullResult> {
+		await this.#ensureRepository();
+		const { theirs, author, limits, choices } = options;
+		if (!isCheckpointId(theirs)) throw new PullError('changed', CHANGED_MESSAGE);
+		const fetched = (
+			await this.#git(['rev-parse', '--verify', '--quiet', REMOTE_REF]).catch(() => '')
+		).trim();
+		if (fetched !== theirs) throw new PullError('changed', CHANGED_MESSAGE);
+
+		try {
+			await this.#inspectTree(theirs, limits);
+		} catch (cause) {
+			await this.#discardFetched();
+			throw cause;
+		}
+
+		const checkpointedHere = (await this.changes()).length > 0 || !(await this.#hasCheckpoints());
+		if (checkpointedHere) {
+			await this.createCheckpoint(`Before pulling from ${options.label}`, author);
+		}
+		const ours = (await this.#git(['rev-parse', 'HEAD'])).trim();
+		if (choices && (checkpointedHere || options.expectedOurs !== ours)) {
+			throw new PullError('changed', CHANGED_MESSAGE);
+		}
+
+		const contained = async (ancestor: string, descendant: string) =>
+			(await this.#gitExit(['merge-base', '--is-ancestor', ancestor, descendant])).code === 0;
+		if (await contained(theirs, ours)) return { status: 'up-to-date' };
+
+		let commit: string;
+		const fastForward = await contained(ours, theirs);
+		if (fastForward) {
+			commit = theirs;
+		} else {
+			const merged = await this.#gitExit([
+				'merge-tree',
+				'--write-tree',
+				'-z',
+				'--allow-unrelated-histories',
+				ours,
+				theirs
+			]);
+			if (merged.code > 1) throw new PullError('failed', 'The two versions could not be merged.');
+			const [mergedTree, ...rest] = merged.stdout.split('\0');
+			const stages = new Map<string, Map<number, { mode: string; id: string }>>();
+			for (const record of rest) {
+				if (record === '') break;
+				const entry = /^(\d+) ([0-9a-f]+) (\d)\t([\s\S]*)$/.exec(record);
+				if (!entry) continue;
+				const found = stages.get(entry[4]!) ?? new Map();
+				found.set(Number(entry[3]), { mode: entry[1]!, id: entry[2]! });
+				stages.set(entry[4]!, found);
+			}
+
+			let tree = mergedTree!.trim();
+			if (merged.code === 1) {
+				const conflicts: Conflict[] = [...stages].map(([name, found]) => ({
+					path: name,
+					kind: found.has(1)
+						? found.has(2) && found.has(3)
+							? 'both-changed'
+							: found.has(2)
+								? 'deleted-there'
+								: 'deleted-here'
+						: 'both-added'
+				}));
+				conflicts.sort((a, b) => a.path.localeCompare(b.path));
+				if (!choices || conflicts.some((conflict) => choices[conflict.path] === undefined)) {
+					return { status: 'conflicts', ours, theirs, conflicts, recorded: checkpointedHere };
+				}
+
+				// The merged tree holds conflict markers; each conflicted file is replaced by
+				// one side's version (or removed, if that side deleted it).
+				const index = { GIT_INDEX_FILE: path.join(this.#gitDir, 'kernic-pull-index') };
+				try {
+					await this.#git(['read-tree', tree], index);
+					for (const { path: name } of conflicts) {
+						const side = stages.get(name)!.get(choices[name] === 'ours' ? 2 : 3);
+						await this.#git(
+							side
+								? [
+										'update-index',
+										'--add',
+										'--replace',
+										'--cacheinfo',
+										`${side.mode},${side.id},${name}`
+									]
+								: ['update-index', '--force-remove', '--', name],
+							index
+						);
+					}
+					tree = (await this.#git(['write-tree'], index)).trim();
+				} finally {
+					await fs.rm(index.GIT_INDEX_FILE, { force: true });
+				}
+			}
+
+			const identity = (value: string) => value.replace(/[<>\r\n]/g, ' ').trim() || 'Unknown';
+			commit = (
+				await this.#git(
+					['commit-tree', tree, '-p', ours, '-p', theirs, '-m', `Pulled from ${options.label}`],
+					{ GIT_AUTHOR_NAME: identity(author.name), GIT_AUTHOR_EMAIL: identity(author.email) }
+				)
+			).trim();
+		}
+
+		const result = await this.#inspectTree(commit, limits);
+		await options.beforeApply?.(result);
+
+		try {
+			await this.#git(['read-tree', '--reset', '-u', commit]);
+		} catch (cause) {
+			// Put the files back as they were; the checkpoint made above still holds them.
+			await this.#git(['read-tree', '--reset', '-u', ours]).catch(() => {});
+			throw cause;
+		}
+		await this.#git(['update-ref', 'HEAD', commit, ours]);
+		await this.#git(['update-ref', '-d', REMOTE_REF]).catch(() => {});
+		const changed = (await this.#git(['diff', '--name-only', '-z', ours, commit]))
+			.split('\0')
+			.filter((name) => name !== '').length;
+		return {
+			status: 'merged',
+			fastForward,
+			changed,
+			checkpoint: (await this.list(1))[0]!
+		};
+	}
 }
 
 /** A repository elsewhere and what is needed to write to it. */
@@ -540,6 +851,44 @@ export interface Remote {
 	username: string;
 	token: string;
 }
+
+/** A place where both the project and the repository changed, to be settled by choosing a side. */
+export type ConflictKind = 'both-changed' | 'both-added' | 'deleted-here' | 'deleted-there';
+
+export interface Conflict {
+	path: string;
+	kind: ConflictKind;
+}
+
+export type PullResult =
+	| { status: 'up-to-date' }
+	| {
+			status: 'conflicts';
+			/** The checkpoint of the project and the commit of the repository that clash. */
+			ours: string;
+			theirs: string;
+			conflicts: Conflict[];
+			/** Whether unsaved-in-history changes were recorded as a checkpoint to get here. */
+			recorded: boolean;
+	  }
+	| { status: 'merged'; fastForward: boolean; changed: number; checkpoint: Checkpoint };
+
+const CHANGED_MESSAGE =
+	'The project or the repository changed while you were choosing. Pull again to see where things stand now.';
+
+/** Why what a repository holds could not be taken over, in words for the person who asked. */
+export class PullError extends Error {
+	readonly kind: 'unsafe-content' | 'too-large' | 'changed' | 'failed';
+	constructor(kind: PullError['kind'], message: string) {
+		super(message);
+		this.kind = kind;
+	}
+}
+
+const megabytes = (bytes: number) =>
+	bytes >= 1024 * 1024
+		? `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
+		: `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 export class NothingToPushError extends Error {
 	constructor() {
@@ -555,6 +904,8 @@ export type RemoteFailure =
 	| 'unreachable'
 	| 'certificate'
 	| 'redirected'
+	| 'no-branch'
+	| 'too-large'
 	| 'failed';
 
 const REMOTE_FAILURE_MESSAGES: Record<RemoteFailure, string> = {
@@ -563,14 +914,17 @@ const REMOTE_FAILURE_MESSAGES: Record<RemoteFailure, string> = {
 	'not-found':
 		'There is no repository at that address, or the token may not see it. Create an empty repository on the forge first.',
 	diverged:
-		'The branch of the repository contains commits this project does not have, so nothing was pushed. Use an empty branch or repository; taking changes over from a repository is not possible yet.',
+		'The branch of the repository contains commits this project does not have, so nothing was pushed. Pull them first.',
 	refused:
 		'The repository refused the push. The branch may be protected, or the token may only read.',
 	unreachable: 'The server could not reach the forge. Try again later.',
 	certificate: 'The certificate of the forge could not be verified, so nothing was sent to it.',
 	redirected:
 		'The forge answered with a redirect to another address. Enter the address the repository has now.',
-	failed: "The push did not work. The server's log has the details."
+	'no-branch': 'The repository has no branch of that name yet. There is nothing to pull from it.',
+	'too-large':
+		'The repository holds more than this server takes over for a project. Nothing was pulled.',
+	failed: "The connection to the repository did not work. The server's log has the details."
 };
 
 /** Why talking to a repository did not work, in words for the person who asked. */
@@ -582,12 +936,100 @@ export class RemoteError extends Error {
 	}
 }
 
+/**
+ * Runs Git and collects what it says. Stops it after `timeoutMs`, or as soon as
+ * the directory it writes into has grown by more than `watch.maxBytes`.
+ */
+function runGit(
+	argv: string[],
+	env: NodeJS.ProcessEnv,
+	options: {
+		timeoutMs: number;
+		watch?: { directory: string; maxBytes: number; baseline: number };
+	}
+): Promise<{ stdout: string; stderr: string }> {
+	return new Promise((resolve, reject) => {
+		const child = spawn('git', argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+		let stdout = '';
+		let stderr = '';
+		let killed = false;
+		let tooLarge = false;
+		const collect = (into: 'out' | 'err') => (chunk: Buffer) => {
+			if (stdout.length + stderr.length > MAX_OUTPUT_BYTES) return;
+			if (into === 'out') stdout += chunk.toString();
+			else stderr += chunk.toString();
+		};
+		child.stdout.on('data', collect('out'));
+		child.stderr.on('data', collect('err'));
+
+		const stop = () => {
+			killed = true;
+			child.kill('SIGKILL');
+		};
+		const timer = setTimeout(stop, options.timeoutMs);
+		let watcher: ReturnType<typeof setInterval> | undefined;
+		if (options.watch) {
+			const { directory, maxBytes, baseline } = options.watch;
+			let measuring = false;
+			watcher = setInterval(() => {
+				if (measuring) return;
+				measuring = true;
+				directoryBytes(directory)
+					.then((bytes) => {
+						if (bytes - baseline > maxBytes) {
+							tooLarge = true;
+							stop();
+						}
+					})
+					.finally(() => (measuring = false));
+			}, FETCH_WATCH_MS);
+		}
+
+		child.on('error', (error) => {
+			clearTimeout(timer);
+			clearInterval(watcher);
+			reject(Object.assign(error, { stdout, stderr, killed, tooLarge }));
+		});
+		child.on('close', (code) => {
+			clearTimeout(timer);
+			clearInterval(watcher);
+			if (code === 0 && !killed) resolve({ stdout, stderr });
+			else
+				reject(
+					Object.assign(new Error(`git exited with ${code}`), {
+						code,
+						stdout,
+						stderr,
+						killed,
+						tooLarge
+					})
+				);
+		});
+	});
+}
+
+/** The size of the files directly in a directory. */
+async function directoryBytes(directory: string): Promise<number> {
+	let total = 0;
+	for (const name of await fs.readdir(directory).catch(() => [] as string[])) {
+		total += (await fs.stat(path.join(directory, name)).catch(() => null))?.size ?? 0;
+	}
+	return total;
+}
+
 /** Reads Git's complaint (always in English, see `LC_ALL`) into one of the known reasons. */
 function explainRemoteFailure(cause: unknown, remote: Remote): RemoteError {
-	const failure = cause as { stdout?: string; stderr?: string; killed?: boolean };
+	const failure = cause as {
+		stdout?: string;
+		stderr?: string;
+		killed?: boolean;
+		tooLarge?: boolean;
+	};
 	const output = `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`;
 	let kind: RemoteFailure = 'failed';
-	if (failure.killed) kind = 'unreachable';
+	if (failure.tooLarge) kind = 'too-large';
+	else if (failure.killed) kind = 'unreachable';
+	else if (/couldn't find remote ref/.test(output)) kind = 'no-branch';
 	else if (/\[rejected\]|non-fast-forward|fetch first/.test(output)) kind = 'diverged';
 	else if (/\[remote rejected\]|protected branch|pre-receive hook declined/.test(output))
 		kind = 'refused';

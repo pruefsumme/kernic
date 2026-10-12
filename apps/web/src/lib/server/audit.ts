@@ -28,6 +28,7 @@ export type AuditAction =
 	| 'project.remote-connected'
 	| 'project.remote-disconnected'
 	| 'project.pushed'
+	| 'project.pulled'
 	| 'workspace.created'
 	| 'workspace.deleted'
 	| 'workspace.invite-created'

@@ -19,6 +19,12 @@ const run = promisify(execFile);
 /** What a token may do. Anything else is no token at all. */
 export type Tokens = Record<string, 'write' | 'read'>;
 
+/** One change in a commit made on the forge. */
+export type ForgeChange =
+	| { path: string; content: string | Buffer; executable?: boolean }
+	| { path: string; symlinkTo: string }
+	| { path: string; remove: true };
+
 export interface Forge {
 	/** `http://127.0.0.1:<port>` */
 	origin: string;
@@ -28,6 +34,15 @@ export interface Forge {
 	createRepository(name: string): Promise<string>;
 	/** Adds a commit to a repository's branch behind the back of whoever pushes to it. */
 	commitElsewhere(name: string, branch: string, file: string, content: string): Promise<void>;
+	/** The same for several changes at once, with the odd things a real repository may hold. */
+	commitFiles(
+		name: string,
+		branch: string,
+		changes: ForgeChange[],
+		message?: string
+	): Promise<void>;
+	/** The text of a file at the tip of a branch, or null if there is none. */
+	fileText(name: string, branch: string, file: string): Promise<string | null>;
 	/** Subjects of the commits on a branch, newest first; empty if there is no such branch. */
 	log(name: string, branch: string): Promise<string[]>;
 	/** Names of the files at the tip of a branch. */
@@ -86,6 +101,16 @@ export async function startForge(options: { port?: number; tokens: Tokens }): Pr
 			response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
 			return;
 		}
+		// The text of one file at the tip of a branch.
+		const reading = /^\/__forge\/text\/([\w-]+\/[\w.-]+)\/([\w-]+)\/(.+)$/.exec(url.pathname);
+		if (reading) {
+			const [, name, branch, file] = reading as unknown as [string, string, string, string];
+			const text = await forge.fileText(name, branch, decodeURIComponent(file));
+			response
+				.writeHead(text === null ? 404 : 200, { 'content-type': 'text/plain' })
+				.end(text ?? '');
+			return;
+		}
 		// In place of a forge's "new repository" page: `?busy` puts a commit of someone else in it.
 		const creating = /^\/__forge\/new\/([\w-]+\/[\w.-]+)$/.exec(url.pathname);
 		if (creating && request.method === 'POST') {
@@ -94,6 +119,27 @@ export async function startForge(options: { port?: number; tokens: Tokens }): Pr
 				await forge.commitElsewhere(creating[1]!, 'main', 'README.md', 'Written on the forge.\n');
 			}
 			response.writeHead(201, { 'content-type': 'application/json' }).end(JSON.stringify(address));
+			return;
+		}
+		// In place of someone else's push: `?message=…` names the commit.
+		const committing = /^\/__forge\/commit\/([\w-]+\/[\w.-]+)\/([\w-]+)\/(.+)$/.exec(url.pathname);
+		if (committing && request.method === 'POST') {
+			const chunks: Buffer[] = [];
+			for await (const chunk of request) chunks.push(chunk as Buffer);
+			const [, name, branch, file] = committing as unknown as [string, string, string, string];
+			const target = decodeURIComponent(file);
+			const link = url.searchParams.get('symlink');
+			await forge.commitFiles(
+				name,
+				branch,
+				[
+					link
+						? { path: target, symlinkTo: link }
+						: { path: target, content: Buffer.concat(chunks) }
+				],
+				url.searchParams.get('message') ?? undefined
+			);
+			response.writeHead(201).end();
 			return;
 		}
 		// A repository that has moved: a forge answers with the new address.
@@ -178,26 +224,46 @@ export async function startForge(options: { port?: number; tokens: Tokens }): Pr
 			return `${forge.origin}/${name}.git`;
 		},
 		async commitElsewhere(name, branch, file, content) {
-			const work = await mkdtemp(path.join(tmpdir(), 'kernic-fake-forge-work-'));
-			const inWork = (args: string[]) =>
-				run('git', [`--git-dir=${repository(name)}`, `--work-tree=${work}`, ...args], {
-					env: { ...gitEnvironment, GIT_INDEX_FILE: path.join(work, '.index') }
+			await forge.commitFiles(name, branch, [{ path: file, content }], `Edit ${file} elsewhere`);
+		},
+		async commitFiles(name, branch, changes, message = 'Changes made elsewhere') {
+			const scratch = await mkdtemp(path.join(tmpdir(), 'kernic-fake-forge-work-'));
+			const environment = { ...gitEnvironment, GIT_INDEX_FILE: path.join(scratch, 'index') };
+			const inRepository = (args: string[]) =>
+				run('git', [`--git-dir=${repository(name)}`, `--work-tree=${scratch}`, ...args], {
+					env: environment
 				});
 			const exists = (await forge.log(name, branch)).length > 0;
-			if (exists) await inWork(['read-tree', `refs/heads/${branch}`]);
-			await writeFile(path.join(work, file), content);
-			await inWork(['add', '--', file]);
-			const tree = (await inWork(['write-tree'])).stdout.trim();
+			if (exists) await inRepository(['read-tree', `refs/heads/${branch}`]);
+			for (const [number, change] of changes.entries()) {
+				if ('remove' in change) {
+					await inRepository(['update-index', '--force-remove', '--', change.path]);
+					continue;
+				}
+				const blob = path.join(scratch, `blob-${number}`);
+				const link = 'symlinkTo' in change;
+				await writeFile(blob, link ? change.symlinkTo : change.content);
+				const id = (await inRepository(['hash-object', '-w', blob])).stdout.trim();
+				const mode = link ? '120000' : change.executable ? '100755' : '100644';
+				await inRepository([
+					'update-index',
+					'--add',
+					'--cacheinfo',
+					`${mode},${id},${change.path}`
+				]);
+			}
+			const tree = (await inRepository(['write-tree'])).stdout.trim();
 			const parents = exists ? ['-p', `refs/heads/${branch}`] : [];
-			const commit = await inWork([
-				'commit-tree',
-				tree,
-				...parents,
-				'-m',
-				`Edit ${file} elsewhere`
-			]);
-			await inWork(['update-ref', `refs/heads/${branch}`, commit.stdout.trim()]);
-			await rm(work, { recursive: true, force: true });
+			const commit = await inRepository(['commit-tree', tree, ...parents, '-m', message]);
+			await inRepository(['update-ref', `refs/heads/${branch}`, commit.stdout.trim()]);
+			await rm(scratch, { recursive: true, force: true });
+		},
+		async fileText(name, branch, file) {
+			try {
+				return (await git(name, ['show', `refs/heads/${branch}:${file}`])).stdout;
+			} catch {
+				return null;
+			}
 		},
 		async log(name, branch) {
 			try {

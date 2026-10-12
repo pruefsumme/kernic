@@ -170,6 +170,27 @@ connections and hold other people's credentials, so:
 - **Who.** Connecting and disconnecting is for owners of the workspace; pushing for whoever may
   edit the project; all three are recorded in the activity log. **Tested:** an editor cannot
   connect, a viewer cannot push, someone outside the workspace gets "not found".
+- **Pulling brings in untrusted files.** What a repository holds is treated like an upload.
+  The branch is fetched under a reference of its own, with Git checking every object it
+  receives, and nothing is written to the project's files until the whole tree has been
+  looked at: ordinary files only (a link or submodule refuses the whole pull), names that pass
+  the same rules as any project path (and in their usual Unicode form), no file over the file
+  limit, and no more files or bytes than a project may have; then the workspace's storage is
+  checked for what the result adds. The merge is computed by Git without touching the files;
+  a conflict is never written into a file as markers, it is shown and one side is chosen for
+  each file. The files are written only after all of that, under the project's lock, and put
+  back if writing fails. A choice made in the dialog is accepted only for the exact pair of
+  versions it was shown for; if the project or the repository moved on, it is refused and the
+  pull starts again. The fetch is stopped if the pack it writes grows beyond the limit, and
+  a result over it is removed afterwards. **Tested** against the stand-in forge: forward
+  moves, merges of unrelated histories, edits to different parts of one file, every kind of
+  conflict and each choice, a choice made too late, a link, odd names, too large a file, too
+  many files, a result that does not fit, too large a transfer, a branch that does not exist.
+  **Not tested:** that a transfer in progress is stopped (the stand-in forge is faster than
+  the check; the check after it is what the test exercises), and what the file attributes of a
+  repository (`.gitattributes`, such as line-ending conversion) do to files when they are
+  written. Git hooks and filters cannot run: no configuration of the machine or the repository
+  is read.
 - **Where Git runs.** In the app, as for checkpoints: without hooks, without the machine's or
   the account's Git configuration, without prompts, with a time limit of two minutes, outside
   the project's lock so that a slow forge does not hold up saving. Never in the compile worker.

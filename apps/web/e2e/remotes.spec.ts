@@ -46,6 +46,32 @@ async function connect(page: Page, projectId: string, url: string, token: string
 	return section;
 }
 
+/** Someone else's change to a file of the repository, made on the forge. */
+async function changeOnForge(
+	name: string,
+	file: string,
+	content: string,
+	options: { message?: string; symlink?: string } = {}
+) {
+	const query = new URLSearchParams();
+	if (options.message) query.set('message', options.message);
+	if (options.symlink) query.set('symlink', options.symlink);
+	const response = await fetch(`${forgeOrigin}/__forge/commit/${name}/main/${file}?${query}`, {
+		method: 'POST',
+		body: content
+	});
+	expect(response.status).toBe(201);
+}
+
+const forgeText = async (name: string, file: string) =>
+	await (await fetch(`${forgeOrigin}/__forge/text/${name}/main/${file}`)).text();
+
+const historyOf = async (page: Page, projectId: string) => {
+	await page.goto(`/projects/${projectId}`);
+	await page.getByRole('button', { name: 'History', exact: true }).click();
+	return panel(page, 'History').getByRole('region', { name: 'Git repository' });
+};
+
 test('a server that names no hosts says so and offers nothing to fill in', async ({ page }) => {
 	test.skip(!externalBaseURL, 'the server started for the tests does name a host');
 	const projectId = await createProject(page, 'Blank document', 'No forge here');
@@ -174,4 +200,105 @@ test('a push never overwrites a repository, and a refusal is explained', async (
 	await remote.getByRole('button', { name: 'Push to main' }).click();
 	await expect(remote.getByRole('alert')).toContainText('refused the push');
 	expect(await onForge('log', empty.name)).toEqual([]);
+});
+
+test('a repository that has commits of its own is pulled, then pushed to', async ({ page }) => {
+	test.skip(!!externalBaseURL, 'a deployment under test has no forge it may talk to');
+	const projectId = await createProject(page, 'Blank document', 'Joined to a busy repository');
+	const busy = await newRepository('busy');
+	await connect(page, projectId, busy.url, forgeToken);
+
+	// Pushing is refused, and says what to do about it.
+	let remote = await historyOf(page, projectId);
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote.getByRole('alert')).toContainText('Pull them first');
+
+	// Pulling merges the two histories: the forge's file arrives next to the project's.
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	await expect(remote.getByRole('status').last()).toContainText('Took over 1 changed file.');
+	await page.getByRole('button', { name: 'Files', exact: true }).click();
+	await expect(
+		panel(page, 'Files').getByRole('button', { name: 'README.md', exact: true })
+	).toBeVisible();
+	await expect(panel(page, 'Files').getByRole('button', { name: /^main\.typ/ })).toBeVisible();
+
+	// Now the push is a plain fast-forward, and a second pull has nothing to bring.
+	await page.getByRole('button', { name: 'History', exact: true }).click();
+	remote = panel(page, 'History').getByRole('region', { name: 'Git repository' });
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote).toContainText('Pushed.');
+	expect(await onForge('files', busy.name)).toEqual(['README.md', 'main.typ']);
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	await expect(remote).toContainText('The repository has nothing new.');
+});
+
+test('a file changed in both places is settled by choosing, nothing is applied before', async ({
+	page
+}) => {
+	test.skip(!!externalBaseURL, 'a deployment under test has no forge it may talk to');
+	const projectId = await createProject(page, 'Blank document', 'Changed in two places');
+	const repository = await newRepository('empty');
+	await connect(page, projectId, repository.url, forgeToken);
+	const remote = await historyOf(page, projectId);
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote).toContainText('Pushed.');
+
+	// Someone changes main.typ on the forge while it is being edited here.
+	await changeOnForge(repository.name, 'main.typ', 'Written on the forge.\n');
+	await appendSource(page, '\nWritten in the editor.');
+	await expect(saveState(page)).toContainText('Saved');
+
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	const dialog = page.getByRole('dialog', { name: /changed in both places/ });
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByText('main.typ')).toBeVisible();
+	// A choice is asked for, not assumed; until it is made nothing can be taken over.
+	await expect(dialog.getByRole('button', { name: 'Take over the changes' })).toBeDisabled();
+	await expect(page.locator('.cm-content')).toContainText('Written in the editor.');
+	await expect(page.locator('.cm-content')).not.toContainText('<<<<<<<');
+
+	// Keeping the project's version leaves its text, and the push then replaces the forge's.
+	await dialog.getByLabel('Keep mine').check();
+	await dialog.getByRole('button', { name: 'Take over the changes' }).click();
+	await expect(dialog).toBeHidden();
+	await expect(page.locator('.cm-content')).toContainText('Written in the editor.');
+	await expect(page.locator('.cm-content')).not.toContainText('Written on the forge.');
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote).toContainText('Pushed.');
+	expect(await forgeText(repository.name, 'main.typ')).toContain('Written in the editor.');
+
+	// Again, and this time the repository's version is taken; the editor shows it at once.
+	await changeOnForge(repository.name, 'main.typ', 'Rewritten on the forge.\n');
+	await appendSource(page, '\nAnd edited here again.');
+	await expect(saveState(page)).toContainText('Saved');
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	await expect(dialog).toBeVisible();
+	await dialog.getByLabel('Take the repository’s').check();
+	await dialog.getByRole('button', { name: 'Take over the changes' }).click();
+	await expect(page.locator('.cm-content')).toContainText('Rewritten on the forge.');
+	await expect(page.locator('.cm-content')).not.toContainText('And edited here again.');
+	// What was written here is not lost: it is in the checkpoint made before the pull.
+	await expect(
+		panel(page, 'History')
+			.getByText(/^Before pulling from/)
+			.first()
+	).toBeVisible();
+});
+
+test('what a repository must not bring in is refused, and nothing changes', async ({ page }) => {
+	test.skip(!!externalBaseURL, 'a deployment under test has no forge it may talk to');
+	const projectId = await createProject(page, 'Blank document', 'Hostile repository');
+	const repository = await newRepository('empty');
+	await connect(page, projectId, repository.url, forgeToken);
+	const remote = await historyOf(page, projectId);
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote).toContainText('Pushed.');
+
+	await changeOnForge(repository.name, 'passwd.typ', '', { symlink: '/etc/passwd' });
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	await expect(remote.getByRole('alert')).toContainText('passwd.typ');
+	await expect(remote.getByRole('alert')).toContainText('a link');
+	await page.getByRole('button', { name: 'Files', exact: true }).click();
+	await expect(panel(page, 'Files').getByRole('button', { name: /^main\.typ/ })).toBeVisible();
+	await expect(panel(page, 'Files').getByText('passwd.typ')).toHaveCount(0);
 });

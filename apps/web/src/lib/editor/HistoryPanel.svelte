@@ -3,8 +3,9 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import PromptDialog from '#lib/components/PromptDialog.svelte';
 	import { formatExact, formatWhen } from '#lib/format.ts';
-	import type { Change, Checkpoint, RemoteStatus, Snapshot } from './api.ts';
+	import type { Change, Checkpoint, PullOutcome, RemoteStatus, Snapshot } from './api.ts';
 	import DiffDialog from './DiffDialog.svelte';
+	import PullDialog from './PullDialog.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 	import SidePanel from './SidePanel.svelte';
 
@@ -30,6 +31,12 @@
 	let pushing = $state(false);
 	let pushError = $state<string | null>(null);
 	let pushed = $state(false);
+	let pulling = $state(false);
+	let pullError = $state<string | null>(null);
+	/** What the last pull came to, in a sentence. */
+	let pullNote = $state<string | null>(null);
+	let settling = $state<Extract<PullOutcome, { status: 'conflicts' }> | null>(null);
+	let settlingOpen = $state(false);
 
 	let creating = $state(false);
 	let restoring = $state<Version | null>(null);
@@ -85,6 +92,49 @@
 		} finally {
 			pushing = false;
 		}
+	}
+
+	/** Says what a pull came to, and shows it: new files appear, open ones are replaced. */
+	async function took(outcome: PullOutcome) {
+		remote = outcome.remote;
+		if (outcome.status === 'up-to-date') {
+			pullNote = 'The repository has nothing new.';
+		} else if (outcome.status === 'merged') {
+			pullNote =
+				outcome.changed === 1
+					? 'Took over 1 changed file.'
+					: `Took over ${outcome.changed} changed files.`;
+			await session.reloadFromDisk(outcome.revision);
+			await refresh();
+		} else {
+			settling = outcome;
+			settlingOpen = true;
+			// The files were recorded as a checkpoint on the way; the list shows it.
+			if (outcome.recorded) await refresh();
+		}
+	}
+
+	async function pull() {
+		pulling = true;
+		pullError = null;
+		pullNote = null;
+		try {
+			if (!(await session.flush()))
+				throw new Error('Save your changes first; the last save failed.');
+			await took(await session.api.pull());
+		} catch (cause) {
+			pullError = cause instanceof Error ? cause.message : 'The pull did not work.';
+		} finally {
+			pulling = false;
+		}
+	}
+
+	async function settle(choices: Record<string, 'ours' | 'theirs'>) {
+		if (!settling) return;
+		const { ours, theirs } = settling;
+		const outcome = await session.api.pull({ choices, ours, theirs });
+		pullError = null;
+		await took(outcome);
 	}
 
 	/** A repository's address without the protocol, as people say it. */
@@ -182,11 +232,27 @@
 					{/if}
 				</p>
 				{#if pushError}<p class="form-error" role="alert">{pushError}</p>{/if}
-				{#if session.canWrite && checkpoints.length > 0 && (remote.unpushed > 0 || pushError)}
+				{#if pulling}
+					<p class="note" role="status">Pulling…</p>
+				{:else if pullNote}
+					<p class="note" role="status">{pullNote}</p>
+				{/if}
+				{#if pullError}<p class="form-error" role="alert">{pullError}</p>{/if}
+				{#if session.canWrite}
 					<div class="actions">
-						<button class="button small" type="button" disabled={pushing} onclick={push}>
-							Push to {remote.branch}
+						<button class="button small" type="button" disabled={pulling || pushing} onclick={pull}>
+							Pull
 						</button>
+						{#if checkpoints.length > 0 && (remote.unpushed > 0 || pushError)}
+							<button
+								class="button small"
+								type="button"
+								disabled={pushing || pulling}
+								onclick={push}
+							>
+								Push to {remote.branch}
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</section>
@@ -316,6 +382,15 @@
 	confirmLabel="Restore"
 	onsubmit={restore}
 />
+
+{#if settling}
+	<PullDialog
+		bind:open={settlingOpen}
+		conflicts={settling.conflicts}
+		recorded={settling.recorded}
+		onsubmit={settle}
+	/>
+{/if}
 
 <DiffDialog
 	bind:open={diffOpen}

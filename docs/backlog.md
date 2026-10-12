@@ -86,21 +86,20 @@ verify any either. Authenticity rests on HTTPS to the registry.
 
 ### 5. Git remotes (Gitea/Forgejo)
 
-Pushing checkpoints to a repository is in place (see "Done"). Still to build, in this order:
+Pushing and pulling are in place (see "Done"). Still to build, in this order:
 
-- Pull: fetch what the repository's branch has and the project does not. Fast-forward when the
-  project has nothing of its own; otherwise a three-way merge computed without touching the
-  files (`git merge-tree`), applied only when it is clean, and for conflicts a choice per file
-  between the two versions. What comes in is checked like an upload: paths, sizes, no links,
-  the workspace's room. Until then a push to a branch with other commits is refused.
 - Create a project from a repository (clone), through the same checks and the dry run of the
   ZIP import.
 - Push automatically after each checkpoint, as an option, with a visible state when the forge
   could not be reached.
 - Changing the branch or the token without disconnecting; a proxy for outgoing connections;
   SSH addresses with a key per project.
+- Conflicts: show the two versions side by side and allow combining them by hand; today a
+  file is taken from one side whole. Binary files and conflicts around renames and folders
+  are settled the same way and have not been tried beyond the simple cases.
 - Not verified: Gitea, GitLab and GitHub (the protocol is the same; only Forgejo 13 and the
-  stand-in forge of the tests were tried), and pushing a history of several hundred megabytes.
+  stand-in forge of the tests were tried), pushing or pulling a history of several hundred
+  megabytes, and `.gitattributes` in a pulled repository.
 
 ### 6. Real-time collaboration
 
@@ -190,6 +189,10 @@ details.
   shared ones, and the chosen one beside the list with its projects, members, invitations and
   settings as tabs. The dashboard marks projects of shared workspaces and can show one
   workspace's projects alone.
+- Pulling from a Git repository: fetch, then move forward or merge; a clean merge is applied,
+  and for files both sides changed the person chooses a side per file. What comes in is checked
+  like an upload before anything is written. Tried against Forgejo 13.0.5 and Git 2.39 (the
+  version in the app image).
 - Pushing checkpoints to a Git repository on a forge: an owner connects a project to a
   repository on a host the administrator allows, with an access token that is stored encrypted;
   editors push from the History panel, which shows how many checkpoints the repository lacks.
