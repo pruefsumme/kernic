@@ -211,8 +211,9 @@ each is in the [backlog](backlog.md).
 2. **Single process.** Rate limits, the per-project lock and editor-assistance connections live
    in memory; running several app instances is not supported.
 3. **No fairness in the compile queue.** One account can queue compiles for many projects.
-4. **Not yet exercised:** a real domain with an automatic certificate, ARM64, an upgrade
-   between two released versions, power loss during a save.
+4. **Not yet exercised:** a real domain with an automatic certificate, the test suites on ARM64
+   hardware (the pipeline only builds the ARM64 images), an upgrade between two released
+   versions, power loss during a save.
 5. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.

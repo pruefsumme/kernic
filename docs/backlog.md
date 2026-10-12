@@ -66,9 +66,12 @@ verify any either. Authenticity rests on HTTPS to the registry.
 
 ### 4. Checks not yet exercised
 
-- A CI pipeline (Forgejo Actions or GitHub Actions; the repository has none yet) that runs unit
-  and end-to-end tests and builds both images for x86-64 and ARM64.
-- An upgrade test: start the previous release's images with data, upgrade, and run the suite.
+- An upgrade test in the pipeline: start the previous release's images with data, upgrade, and
+  run the suite. It needs a first released version to upgrade from.
+- Publishing images from the pipeline (a registry and tags per release), once there is a
+  licence and a first version.
+- ARM64: the images are built under emulation for tags and on request; the test suites have
+  not run on ARM64 hardware.
 - A failed migration: start the app against a database where a migration fails half-way and
   check that it stops without leaving the schema half-changed.
 - A real domain with an automatic certificate, once there is a host to try it on.

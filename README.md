@@ -54,6 +54,14 @@ The end-to-end tests build the app, start it together with a worker on separate 
 their own database (`kernic_test`, created and wiped automatically) and a temporary data
 directory. They need Playwright's Chromium: `pnpm --filter @kernic/web exec playwright install chromium`.
 
+The worker and its tests need the Typst CLI, and Tinymist for editor assistance.
+`scripts/install-typst-tools.sh` installs both in the versions the worker image pins, checked
+against the same checksums.
+
+Every push and pull request runs all of the above on GitHub Actions, and then the browser tests
+once more against the Docker Compose stack (`.github/workflows/ci.yml`). Images for ARM64 are
+built for version tags and on request.
+
 Configuration is read from environment variables; `.env.example` lists the ones needed for
 development, and `apps/web/src/env.ts` and `apps/worker/src/config.ts` describe all of them.
 
