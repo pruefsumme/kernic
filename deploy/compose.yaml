@@ -28,7 +28,8 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-    image: kernic-app
+    # Built here by default; set KERNIC_APP_IMAGE in .env to run a published image instead.
+    image: ${KERNIC_APP_IMAGE:-kernic-app}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://kernic:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/kernic
@@ -66,7 +67,7 @@ services:
     build:
       context: ..
       dockerfile: apps/worker/Dockerfile
-    image: kernic-worker
+    image: ${KERNIC_WORKER_IMAGE:-kernic-worker}
     restart: unless-stopped
     environment:
       KERNIC_WORKER_TOKEN: ${KERNIC_WORKER_TOKEN:?set KERNIC_WORKER_TOKEN in deploy/.env}

@@ -27,6 +27,8 @@ cd kernic/deploy
 cp .env.example .env
 ```
 
+(To run the images of a release instead of building them, see "Published images" below.)
+
 Edit `.env`:
 
 - `KERNIC_SITE_ADDRESS` — where people will open Kernic:
@@ -37,6 +39,12 @@ Edit `.env`:
 - `POSTGRES_PASSWORD` and `KERNIC_WORKER_TOKEN` — two different random values. Generate each with
   `openssl rand -hex 32`.
 
+Check the machine and the file before the first start; it changes nothing:
+
+```sh
+./preflight.sh
+```
+
 Then build and start:
 
 ```sh
@@ -44,6 +52,54 @@ docker compose up -d --build
 ```
 
 The first build downloads the pinned Typst release and verifies its checksum.
+
+### On a server on the internet
+
+What a first installation on a VPS needs, in order:
+
+1. **A kernel of 5.13 or newer** (`uname -r`; every current Debian, Ubuntu and Fedora has one).
+   The compile worker uses Landlock and refuses to start without it. Most VPS providers allow
+   this; a few container-based ones (OpenVZ, LXC without nesting) do not. `./preflight.sh`
+   checks it.
+2. **A domain** with an `A` (and `AAAA`) record pointing at the server, *before* the first
+   start: Caddy asks for a certificate when it starts and a missing record makes it wait and
+   retry. Put the domain in `KERNIC_SITE_ADDRESS`.
+3. **Ports 80 and 443** open to the internet, and nothing else: the database, the worker and the
+   app are not published. If a firewall runs on the machine (`ufw`, `firewalld`) allow those two
+   (and your SSH port). Docker publishes ports around some firewalls, so check from outside with
+   `nmap` or a port-scan website rather than trusting the firewall's own list.
+4. `.env` with two different random values (`openssl rand -hex 32` for `POSTGRES_PASSWORD` and
+   `KERNIC_WORKER_TOKEN`), then `./preflight.sh`, then `docker compose up -d --build`.
+5. **The first account.** Open the address, read the setup token with
+   `docker compose logs app | grep -i "setup token"`, create the administrator. Do this at once:
+   until an account exists, whoever knows the token can claim the server. After that
+   registration is closed; people join through invitation links you create under Administration.
+6. **A backup that runs by itself.** `deploy/backup.sh` stops the app for a few seconds, so run
+   it at a quiet hour from cron, and copy the result off the machine:
+   `15 3 * * * cd /path/to/kernic/deploy && ./backup.sh /var/backups/kernic`. Try a restore on
+   another machine once (see "Restore"); a backup nobody has restored is a hope.
+7. **After the first start**, in this order: open the address over HTTPS (padlock, no
+   warning), sign in, create a project from a template, see the preview appear, export a PDF.
+   If the preview never appears, `docker compose logs worker` says why.
+
+Kernic sends no e-mail: invitation and password-reset links are shown to the administrator, who
+passes them on.
+
+### Published images
+
+A release publishes the app and worker images (x86-64 and ARM64) to the GitHub container
+registry, so a server needs no source code and no build. In `.env`:
+
+```sh
+KERNIC_APP_IMAGE=ghcr.io/<owner>/kernic-app:<version>
+KERNIC_WORKER_IMAGE=ghcr.io/<owner>/kernic-worker:<version>
+```
+
+Then `docker compose pull && docker compose up -d --no-build`. Use the same version for both.
+While the repository is private, the images are private too: create a personal access token
+with only `read:packages` and run `docker login ghcr.io -u <your user>` once on the server.
+The files needed besides the images are the ones in `deploy/` (`compose.yaml`, `Caddyfile`,
+`.env`, the scripts).
 
 ### First sign-in
 
@@ -286,9 +342,13 @@ and compilation were verified afterwards. Test it yourself once before you rely 
 ```sh
 cd deploy
 ./backup.sh /path/to/backups       # always back up first
-git pull
+git pull                           # or: git fetch --tags && git checkout v<version>
 docker compose up -d --build
 ```
+
+With published images, set the new version in `KERNIC_APP_IMAGE` and `KERNIC_WORKER_IMAGE`, then
+`docker compose pull && docker compose up -d --no-build`. What changed in each version is in
+[CHANGELOG.md](../CHANGELOG.md).
 
 Database migrations are applied automatically when the app starts. They only go forward: after
 an upgrade, the database cannot be used with an older version of Kernic. To go back, reinstall
