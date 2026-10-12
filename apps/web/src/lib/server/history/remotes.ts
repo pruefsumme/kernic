@@ -1,4 +1,4 @@
-import { gitRemotes, projectDir, projectTreeDir, treeLimits } from '../config';
+import { gitRemotes, maxFetchBytes, projectDir, projectTreeDir, treeLimits } from '../config';
 import { sql } from '../db/client';
 import { assertWorkspaceRoom, bumpRevision } from '../projects/projects';
 import { treeUsage } from '../projects/tree';
@@ -28,7 +28,8 @@ export interface ProjectRemote {
 /** Shown where a person could act on it: the feature is off, or busy. */
 export class RemoteUnavailableError extends Error {}
 
-const TOKEN_PURPOSE = 'git remote token';
+/** What a stored token is bound to, besides its project; see `secrets.ts`. */
+export const TOKEN_PURPOSE = 'git remote token';
 
 /** Whether this server lets projects be connected to repositories at all. */
 export const remotesEnabled = gitRemotes.origins.length > 0;
@@ -213,12 +214,7 @@ export async function pullProject(input: {
 	return exclusively(input.projectId, async () => {
 		const history = new ProjectHistory(projectDir(input.projectId));
 		// Outside the project's lock, like a push: only the merge below needs it.
-		const theirs =
-			input.theirs ??
-			(await history.fetchBranch(
-				remote,
-				Math.max(treeLimits.maxProjectBytes * 2, 64 * 1024 * 1024)
-			));
+		const theirs = input.theirs ?? (await history.fetchBranch(remote, maxFetchBytes));
 
 		const outcome = await withHistory(input.projectId, (locked) =>
 			locked.pull({

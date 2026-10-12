@@ -20,7 +20,8 @@ export const load: PageServerLoad = async (event) => {
 			sourceName: pending.sourceName,
 			status: pending.status,
 			report: pending.report,
-			error: pending.error
+			error: pending.error,
+			fromRepository: pending.fromRepository
 		}
 	};
 };
@@ -43,11 +44,14 @@ export const actions: Actions = {
 			throw cause;
 		}
 		const pending = await getImport(user.id, event.params.importId);
-		await recordInitialCheckpoint(
-			project.id,
-			`Imported from ${pending?.sourceName ?? 'a ZIP archive'}`,
-			user
-		);
+		// A project made from a repository starts with that repository's own history.
+		if (!pending?.fromRepository) {
+			await recordInitialCheckpoint(
+				project.id,
+				`Imported from ${pending?.sourceName ?? 'a ZIP archive'}`,
+				user
+			);
+		}
 		await recordAudit(event, 'project.imported', { subject: project.name });
 		redirect(303, `/projects/${project.id}`);
 	},

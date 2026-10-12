@@ -84,12 +84,11 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
 
-### 5. Git remotes (Gitea/Forgejo)
+### 5. Git remotes: what is left
 
-Pushing and pulling are in place (see "Done"). Still to build, in this order:
+Pushing, pulling and cloning are in place (see "Done"). The feature is complete for its purpose;
+what follows is polish, to be done when people ask for it:
 
-- Create a project from a repository (clone), through the same checks and the dry run of the
-  ZIP import.
 - Push automatically after each checkpoint, as an option, with a visible state when the forge
   could not be reached.
 - Changing the branch or the token without disconnecting; a proxy for outgoing connections;
@@ -189,6 +188,9 @@ details.
   shared ones, and the chosen one beside the list with its projects, members, invitations and
   settings as tabs. The dashboard marks projects of shared workspaces and can show one
   workspace's projects alone.
+- Making a project from a Git repository: fetched into a staging directory, checked and
+  compiled once like a ZIP import, confirmed by the person, then created with the repository's
+  history and, if a token was given, connected to it.
 - Pulling from a Git repository: fetch, then move forward or merge; a clean merge is applied,
   and for files both sides changed the person chooses a side per file. What comes in is checked
   like an upload before anything is written. Tried against Forgejo 13.0.5 and Git 2.39 (the

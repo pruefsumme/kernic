@@ -186,6 +186,12 @@ connections and hold other people's credentials, so:
   moves, merges of unrelated histories, edits to different parts of one file, every kind of
   conflict and each choice, a choice made too late, a link, odd names, too large a file, too
   many files, a result that does not fit, too large a transfer, a branch that does not exist.
+  A project made from a repository goes through the same checks, in a staging directory of its
+  own, and through the ZIP import's dry run and confirmation; the access token entered for it is
+  kept encrypted with the staged import (bound to it) until confirmed, then moved to the project
+  or deleted with the import. At most three repositories per person are being checked at once.
+  **Tested** at both levels, including a repository with a link, one without a Typst file, a
+  missing branch, a private repository with no or a wrong token, and a host that is not listed.
   **Not tested:** that a transfer in progress is stopped (the stand-in forge is faster than
   the check; the check after it is what the test exercises), and what the file attributes of a
   repository (`.gitattributes`, such as line-ending conversion) do to files when they are

@@ -141,6 +141,9 @@
 			</button>
 			{#if canCreate}
 				<a class="import" href="/import"><Icon name="upload" size={16} /> Import a ZIP archive</a>
+				{#if data.remotesEnabled}
+					<a class="import" href="/import/git"><Icon name="branch" size={16} /> Clone from Git</a>
+				{/if}
 			{/if}
 		</section>
 		{#if !canCreate}

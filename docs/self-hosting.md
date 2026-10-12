@@ -189,7 +189,12 @@ KERNIC_SECRET_KEY=<output of: openssl rand -hex 32>
   would add more than twice `KERNIC_MAX_PROJECT_MB` (at least 64 MB) is refused and removed.
   Git 2.38 or newer is needed in the app's image; the one in the image is.
 
-Creating a project from a repository is not built yet.
+- **Cloning.** On the dashboard, "Clone from Git" makes a project from a repository. It is
+  fetched, checked like an uploaded ZIP archive (what it needs, what is missing, whether it
+  compiles) and shown to you before anything is created. The project then has the repository's
+  own history. With an access token it is connected to the repository, in step with it, so
+  the first push is a plain fast-forward; without one (a public repository) it is only cloned.
+  A repository with no `.typ` file, or with links or submodules in it, is refused.
 
 ### Fonts
 

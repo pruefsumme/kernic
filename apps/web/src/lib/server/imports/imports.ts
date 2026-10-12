@@ -7,8 +7,17 @@ import { pipeline } from 'node:stream/promises';
 import { QueueFullError, requestCompile } from '../compile/jobs';
 import { compileProject } from '../compile/compile-project';
 import { WorkerUnavailableError, type Diagnostic } from '../compile/worker-client';
-import { importDir, projectDir, projectTreeDir, treeLimits } from '../config';
+import {
+	gitRemotes,
+	importDir,
+	maxFetchBytes,
+	projectDir,
+	projectTreeDir,
+	treeLimits
+} from '../config';
 import { sql } from '../db/client';
+import { PullError, ProjectHistory, RemoteError, type Remote } from '../history/git';
+import { parseBranch, parseRemoteUrl, parseToken, parseUsername } from '../history/remote-url';
 import { looksLikeText } from '../projects/content-types';
 import {
 	assertWorkspaceRoom,
@@ -19,7 +28,9 @@ import {
 	WorkspaceLimitError,
 	type Project
 } from '../projects/projects';
-import { ArchiveError, extractArchive, type SkippedEntry } from './archive';
+import { TOKEN_PURPOSE as REMOTE_TOKEN_PURPOSE } from '../history/remotes';
+import { openSecret, sealSecret } from '../secrets';
+import { ArchiveError, extractArchive, type ExtractedArchive, type SkippedEntry } from './archive';
 import { analyzeSources, guessEntryFile, type MissingReference, type PackageUse } from './scan';
 
 /**
@@ -65,6 +76,8 @@ export interface ProjectImport {
 	report: ImportReport | null;
 	error: string | null;
 	projectId: string | null;
+	/** Whether the files come from a Git repository rather than an archive. */
+	fromRepository: boolean;
 }
 
 interface ImportRow {
@@ -75,6 +88,7 @@ interface ImportRow {
 	report: ImportReport | null;
 	error: string | null;
 	project_id: string | null;
+	remote_url: string | null;
 }
 
 const toImport = (row: ImportRow): ProjectImport => ({
@@ -84,7 +98,8 @@ const toImport = (row: ImportRow): ProjectImport => ({
 	status: row.status,
 	report: row.report,
 	error: row.error,
-	projectId: row.project_id
+	projectId: row.project_id,
+	fromRepository: row.remote_url !== null
 });
 
 const STAGED_LIFETIME_HOURS = 24;
@@ -169,21 +184,35 @@ async function buildReport(
 	zipPath: string,
 	sourceName: string
 ): Promise<ImportReport> {
-	const tree = stagedTree(importId);
-	const archive = await extractArchive(zipPath, tree, {
+	const archive = await extractArchive(zipPath, stagedTree(importId), {
 		maxFiles: treeLimits.maxProjectFiles,
 		maxFileBytes: treeLimits.maxFileBytes,
 		maxTotalBytes: treeLimits.maxProjectBytes
 	});
+	return reportOn(importId, archive, {
+		kind: 'archive',
+		suggestedName: archive.strippedFolder ?? sourceName.replace(/\.zip$/i, '')
+	});
+}
 
+/**
+ * The dry run: what the staged files are, what they need, and whether they
+ * compile. The same for an unpacked archive and for a repository's files.
+ */
+async function reportOn(
+	importId: string,
+	archive: ExtractedArchive,
+	options: { kind: 'archive' | 'repository'; suggestedName: string }
+): Promise<ImportReport> {
+	const tree = stagedTree(importId);
 	const typstFiles = archive.files
 		.filter((file) => file.path.toLowerCase().endsWith('.typ'))
 		.map((file) => file.path);
 	if (typstFiles.length === 0) {
 		throw new ArchiveError(
 			archive.files.length === 0
-				? 'The archive contains no files that can be imported.'
-				: 'The archive contains no .typ files, so there is no Typst document to import.'
+				? `The ${options.kind} contains no files that can be imported.`
+				: `The ${options.kind} contains no .typ files, so there is no Typst document to import.`
 		);
 	}
 
@@ -207,7 +236,7 @@ async function buildReport(
 		strippedFolder: archive.strippedFolder,
 		typstFiles,
 		suggestedEntry,
-		suggestedName: (archive.strippedFolder ?? sourceName.replace(/\.zip$/i, '')).slice(0, 120),
+		suggestedName: options.suggestedName.slice(0, 120),
 		skipped: archive.skipped,
 		skippedCount: archive.skippedCount,
 		packages: packages.map((use) => ({
@@ -251,11 +280,100 @@ async function dryRunCompile(
 	}
 }
 
+const TOKEN_PURPOSE = 'git clone token';
+const MAX_ANALYSES_PER_USER = 3;
+
+/** What cloning needs from a person, as typed. */
+export interface CloneRequest {
+	userId: string;
+	workspaceId: string;
+	url: unknown;
+	branch: unknown;
+	username: unknown;
+	/** Empty for a repository that anyone may read. */
+	token: unknown;
+}
+
+/**
+ * Starts making a project from a Git repository: the values are checked, and
+ * the repository is fetched and examined in the background, exactly as an
+ * uploaded archive is (see the top of this file). Throws `RemoteUrlError` for
+ * values that cannot be used. Returns the id of the import.
+ */
+export async function startClone(input: CloneRequest): Promise<string> {
+	if (gitRemotes.origins.length === 0) {
+		error(400, 'This server is not set up to connect to Git repositories.');
+	}
+	const url = parseRemoteUrl(input.url, gitRemotes.origins);
+	const branch = parseBranch(input.branch);
+	const username = parseUsername(input.username);
+	const token =
+		typeof input.token === 'string' && input.token.trim() === '' ? '' : parseToken(input.token);
+
+	const [running] = await sql<{ count: number }[]>`
+		SELECT count(*)::int AS count FROM project_imports
+		WHERE user_id = ${input.userId} AND status = 'analyzing'
+	`;
+	if (running!.count >= MAX_ANALYSES_PER_USER) {
+		error(429, 'Several checks are still running. Wait for one to finish, then try again.');
+	}
+
+	const location = new URL(url);
+	const name = location.pathname
+		.split('/')
+		.pop()!
+		.replace(/\.git$/, '');
+	const sourceName = `${location.host}${location.pathname.replace(/\.git$/, '')}`;
+	const [row] = await sql<{ id: string }[]>`
+		INSERT INTO project_imports
+			(user_id, workspace_id, source_name, status, remote_url, remote_branch, remote_username)
+		VALUES
+			(${input.userId}, ${input.workspaceId}, ${sourceName}, 'analyzing', ${url}, ${branch}, ${username})
+		RETURNING id
+	`;
+	const importId = row!.id;
+	if (token !== '') {
+		const sealed = sealSecret(gitRemotes.secretKey, TOKEN_PURPOSE, importId, token);
+		await sql`UPDATE project_imports SET remote_token_sealed = ${sealed} WHERE id = ${importId}`;
+	}
+
+	void analyzeClone(importId, { url, branch, username, token }, name);
+	return importId;
+}
+
+async function analyzeClone(importId: string, remote: Remote, name: string): Promise<void> {
+	try {
+		const history = new ProjectHistory(importDir(importId));
+		const theirs = await history.fetchBranch(remote, maxFetchBytes);
+		const { files } = await history.adoptFetched(theirs, treeLimits);
+		const report = await reportOn(
+			importId,
+			{ files, skipped: [], skippedCount: 0, strippedFolder: null },
+			{ kind: 'repository', suggestedName: name }
+		);
+		await sql`
+			UPDATE project_imports SET status = 'ready', report = ${sql.json(report as never)}
+			WHERE id = ${importId}
+		`;
+	} catch (cause) {
+		const known =
+			cause instanceof ArchiveError || cause instanceof RemoteError || cause instanceof PullError;
+		if (!known) console.error('clone analysis failed', cause);
+		const message = known
+			? cause.message
+			: 'The repository could not be read. Check the address and try again.';
+		await fs.rm(importDir(importId), { recursive: true, force: true });
+		await sql`
+			UPDATE project_imports SET status = 'rejected', error = ${message} WHERE id = ${importId}
+		`;
+	}
+}
+
 /** Returns the import if it belongs to the user; imports are private to who uploaded them. */
 export async function getImport(userId: string, importId: string): Promise<ProjectImport | null> {
 	if (!isUuid(importId)) return null;
 	const [row] = await sql<ImportRow[]>`
-		SELECT id, workspace_id, source_name, status, report, error, project_id
+		SELECT id, workspace_id, source_name, status, report, error, project_id, remote_url
 		FROM project_imports
 		WHERE id = ${importId} AND user_id = ${userId}
 	`;
@@ -302,6 +420,14 @@ export async function confirmImport(input: {
 	});
 	await fs.mkdir(projectDir(project.id), { recursive: true });
 	await fs.rename(stagedTree(input.importId), projectTreeDir(project.id));
+	if (pending.fromRepository) {
+		// The repository's history comes along: it is the project's history from the start.
+		await fs.rename(
+			path.join(importDir(input.importId), 'repo.git'),
+			path.join(projectDir(project.id), 'repo.git')
+		);
+		await connectCloned(input.importId, project.id, input.userId);
+	}
 	await fs.rm(importDir(input.importId), { recursive: true, force: true });
 	await sql`UPDATE project_imports SET project_id = ${project.id} WHERE id = ${input.importId}`;
 
@@ -313,6 +439,36 @@ export async function confirmImport(input: {
 		}
 	);
 	return project;
+}
+
+/**
+ * Connects a project made from a repository to it, so that it can be pushed to
+ * and pulled from right away. The project is in step with the repository: what
+ * it was made from is already there.
+ */
+async function connectCloned(importId: string, projectId: string, userId: string): Promise<void> {
+	const [row] = await sql<
+		{
+			remote_url: string;
+			remote_branch: string;
+			remote_username: string;
+			remote_token_sealed: Uint8Array | null;
+		}[]
+	>`
+		SELECT remote_url, remote_branch, remote_username, remote_token_sealed
+		FROM project_imports WHERE id = ${importId}
+	`;
+	// Without a token nothing can be written, so the project is not connected.
+	if (!row?.remote_token_sealed) return;
+	const token = openSecret(gitRemotes.secretKey, TOKEN_PURPOSE, importId, row.remote_token_sealed);
+	const sealed = sealSecret(gitRemotes.secretKey, REMOTE_TOKEN_PURPOSE, projectId, token);
+	const commit = await new ProjectHistory(projectDir(projectId)).head();
+	await sql`
+		INSERT INTO project_remotes
+			(project_id, url, branch, username, token_sealed, connected_by, last_pushed_at, last_pushed_checkpoint)
+		VALUES
+			(${projectId}, ${row.remote_url}, ${row.remote_branch}, ${row.remote_username}, ${sealed}, ${userId}, now(), ${commit})
+	`;
 }
 
 export async function cancelImport(userId: string, importId: string): Promise<void> {

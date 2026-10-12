@@ -33,6 +33,12 @@ export const workspaceLimits = {
 export const maxWaitingCompiles = KERNIC_MAX_WAITING_COMPILES;
 
 /**
+ * Most a fetch from a Git repository may add to a project's own repository: the
+ * history is more than the files, so twice what a project may hold, and at least 64 MB.
+ */
+export const maxFetchBytes = Math.max(treeLimits.maxProjectBytes * 2, 64 * 1024 * 1024);
+
+/**
  * Git repositories elsewhere. The server opens connections to them itself, so
  * it only does so to hosts its administrator has listed; without a list,
  * projects cannot be connected to a repository at all. The key encrypts the
