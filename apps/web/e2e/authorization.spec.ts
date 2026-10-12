@@ -251,6 +251,53 @@ test('another user can neither see nor change a project, through any route', asy
 	await context.close();
 });
 
+test('a workspace cannot take more than its share of the storage', async ({ browser }) => {
+	const { context, page: theirs } = await signInAsOutsider(browser);
+	const projectId = await createProject(theirs, 'Blank document', 'Large files');
+	const api = `/api/projects/${projectId}`;
+	const upload = (name: string) =>
+		context.request.post(`${api}/upload`, {
+			headers: { origin: baseURL },
+			multipart: {
+				directory: '',
+				files: {
+					name,
+					mimeType: 'application/octet-stream',
+					buffer: Buffer.alloc(24 * 1024 * 1024)
+				}
+			}
+		});
+	const stored = async (name: string) => (await (await upload(name)).json()).results[0];
+
+	// The test server allows 64 MB per workspace: two files of 24 MB fit, a third does not.
+	expect((await stored('one.bin')).stored).toBe(true);
+	expect((await stored('two.bin')).stored).toBe(true);
+	const refused = await stored('three.bin');
+	expect(refused.stored).toBe(false);
+	expect(refused.message).toMatch(/used its storage on this server \(48 MB of 64 MB\)/);
+
+	// A new project is still possible, and so is writing: only growth past the limit is refused.
+	const save = await context.request.put(`${api}/files/notes.typ`, {
+		headers: { origin: baseURL, 'content-type': 'text/plain', 'x-kernic-base-hash': 'none' },
+		data: 'A few words.'
+	});
+	expect(save.status()).toBe(200);
+	const tooMuch = await context.request.put(`${api}/files/big.typ`, {
+		headers: { origin: baseURL, 'content-type': 'text/plain', 'x-kernic-base-hash': 'none' },
+		data: Buffer.alloc(17 * 1024 * 1024, 'a')
+	});
+	expect(tooMuch.status()).toBe(413);
+
+	// The account page says where they stand.
+	await theirs.goto('/account');
+	await expect(theirs.getByText(/48\.0 MB of 64\.0 MB/)).toBeVisible();
+
+	// Deleting makes room again.
+	await context.request.delete(`${api}/files/one.bin`, { headers: { origin: baseURL } });
+	expect((await stored('three.bin')).stored).toBe(true);
+	await context.close();
+});
+
 test('a disabled account is signed out everywhere and cannot sign in', async ({ browser }) => {
 	const { context, page } = await signInAsOutsider(browser);
 	await expect(page.getByRole('button', { name: /Empty document/ })).toBeVisible();

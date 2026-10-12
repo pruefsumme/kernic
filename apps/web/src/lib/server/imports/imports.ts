@@ -4,13 +4,21 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { requestCompile } from '../compile/jobs';
+import { QueueFullError, requestCompile } from '../compile/jobs';
 import { compileProject } from '../compile/compile-project';
 import { WorkerUnavailableError, type Diagnostic } from '../compile/worker-client';
 import { importDir, projectDir, projectTreeDir, treeLimits } from '../config';
 import { sql } from '../db/client';
 import { looksLikeText } from '../projects/content-types';
-import { insertProject, isUuid, validateProjectName, type Project } from '../projects/projects';
+import {
+	assertWorkspaceRoom,
+	insertProject,
+	isUuid,
+	measureProject,
+	validateProjectName,
+	WorkspaceLimitError,
+	type Project
+} from '../projects/projects';
 import { ArchiveError, extractArchive, type SkippedEntry } from './archive';
 import { analyzeSources, guessEntryFile, type MissingReference, type PackageUse } from './scan';
 
@@ -270,6 +278,14 @@ export async function confirmImport(input: {
 		error(400, 'Choose one of the Typst files in the archive as the main file.');
 	}
 
+	await assertWorkspaceRoom(pending.workspaceId, {
+		projects: 1,
+		bytes: pending.report.totalBytes
+	}).catch((cause) => {
+		if (cause instanceof WorkspaceLimitError) error(413, cause.message);
+		throw cause;
+	});
+
 	// Claim the import first, so two confirmations cannot both create a project.
 	const [claimed] = await sql`
 		UPDATE project_imports SET status = 'imported'
@@ -289,7 +305,13 @@ export async function confirmImport(input: {
 	await fs.rm(importDir(input.importId), { recursive: true, force: true });
 	await sql`UPDATE project_imports SET project_id = ${project.id} WHERE id = ${input.importId}`;
 
-	await requestCompile({ projectId: project.id, userId: input.userId, format: 'svg' });
+	await measureProject(project.id);
+	// Best effort: the editor asks again when it opens, should the queue be full now.
+	await requestCompile({ projectId: project.id, userId: input.userId, format: 'svg' }).catch(
+		(cause) => {
+			if (!(cause instanceof QueueFullError)) throw cause;
+		}
+	);
 	return project;
 }
 

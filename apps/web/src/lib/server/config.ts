@@ -2,7 +2,10 @@ import {
 	KERNIC_DATA_DIR,
 	KERNIC_MAX_FILE_MB,
 	KERNIC_MAX_PROJECT_FILES,
-	KERNIC_MAX_PROJECT_MB
+	KERNIC_MAX_PROJECT_MB,
+	KERNIC_MAX_WAITING_COMPILES,
+	KERNIC_MAX_WORKSPACE_MB,
+	KERNIC_MAX_WORKSPACE_PROJECTS
 } from '$app/env/private';
 import path from 'node:path';
 import type { TreeLimits } from './projects/tree';
@@ -14,6 +17,16 @@ export const treeLimits: TreeLimits = {
 	maxProjectBytes: KERNIC_MAX_PROJECT_MB,
 	maxProjectFiles: KERNIC_MAX_PROJECT_FILES
 };
+
+/**
+ * What one workspace, and one account, may use of a server that is shared with
+ * others. Self-hosters set these to what their server can carry.
+ */
+export const workspaceLimits = {
+	maxBytes: KERNIC_MAX_WORKSPACE_MB,
+	maxProjects: KERNIC_MAX_WORKSPACE_PROJECTS
+};
+export const maxWaitingCompiles = KERNIC_MAX_WAITING_COMPILES;
 
 /** Largest text file the editor will open or save. Larger files are treated as assets. */
 export const MAX_EDITABLE_BYTES = 2 * 1024 * 1024;

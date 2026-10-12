@@ -1,3 +1,4 @@
+import { listWorkspacesForUser, workspaceUsage } from '#lib/server/projects/projects.ts';
 import { APPEARANCE_COOKIE, parseAppearance } from '#lib/appearance.ts';
 import { fail } from '@sveltejs/kit';
 import { recordAudit } from '#lib/server/audit.ts';
@@ -17,6 +18,12 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		account: { email: user.email, displayName: user.displayName, isAdmin: user.isAdmin },
 		appearance: parseAppearance(event.cookies.get(APPEARANCE_COOKIE)),
+		workspaces: await Promise.all(
+			(await listWorkspacesForUser(user.id)).map(async (workspace) => ({
+				...workspace,
+				usage: await workspaceUsage(workspace.id)
+			}))
+		),
 		sessions: await listSessions(user.id, readSessionCookie(event) ?? '')
 	};
 };

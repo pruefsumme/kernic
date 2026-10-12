@@ -4,8 +4,18 @@ import { snapshotBeforeChange } from '#lib/server/history/history.ts';
 import { readBody, requireProject, throwAsHttpError } from '#lib/server/http.ts';
 import { responseHeadersFor } from '#lib/server/projects/content-types.ts';
 import { withProjectLock } from '#lib/server/projects/lock.ts';
-import { bumpRevision } from '#lib/server/projects/projects.ts';
-import { deleteTreeEntry, readTreeFile, sha256, writeTreeFile } from '#lib/server/projects/tree.ts';
+import {
+	assertWorkspaceRoom,
+	bumpRevision,
+	WorkspaceLimitError
+} from '#lib/server/projects/projects.ts';
+import {
+	deleteTreeEntry,
+	readTreeFile,
+	sha256,
+	treeFileSize,
+	writeTreeFile
+} from '#lib/server/projects/tree.ts';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
@@ -47,6 +57,15 @@ export const PUT: RequestHandler = async (event) => {
 	) {
 		error(413, 'This file is too large to edit in the browser.', { code: 'file-too-large' });
 	}
+
+	// Only what the save adds counts; a file may always be made smaller.
+	const root = projectTreeDir(project.id);
+	const growth =
+		content.byteLength - (await treeFileSize(root, event.params.path).catch(throwAsHttpError));
+	await assertWorkspaceRoom(project.workspaceId, { bytes: growth }).catch((cause) => {
+		if (cause instanceof WorkspaceLimitError) error(413, cause.message, { code: 'workspace-full' });
+		throw cause;
+	});
 
 	const hash = await withProjectLock(project.id, async () => {
 		await snapshotBeforeChange(project.id);

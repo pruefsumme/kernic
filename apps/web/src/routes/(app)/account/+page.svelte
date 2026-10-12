@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
-	import { formatExact, formatWhen } from '#lib/format.ts';
+	import { formatBytes, formatExact, formatWhen } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -82,6 +82,35 @@
 		<section id="appearance">
 			<h2>Appearance</h2>
 			<AppearanceSettings initial={data.appearance} />
+		</section>
+
+		<section>
+			<h2>Storage</h2>
+			{#each data.workspaces as workspace (workspace.id)}
+				{@const share = Math.min(100, (workspace.usage.bytes / workspace.usage.maxBytes) * 100)}
+				<div class="usage">
+					<p>
+						<strong>{workspace.kind === 'personal' ? 'Your projects' : workspace.name}</strong>
+						<span>
+							{formatBytes(workspace.usage.bytes)} of {formatBytes(workspace.usage.maxBytes)} ·
+							{workspace.usage.projects} of {workspace.usage.maxProjects} projects
+						</span>
+					</p>
+					<meter
+						min="0"
+						max="100"
+						high="85"
+						value={share}
+						aria-label="Storage used in {workspace.kind === 'personal'
+							? 'your projects'
+							: workspace.name}"
+					></meter>
+				</div>
+			{/each}
+			<p class="hint">
+				Counts the files of your projects. Their version history and rendered pages are kept in
+				addition. The limits are set by whoever runs this server.
+			</p>
 		</section>
 
 		<section>
@@ -187,6 +216,61 @@
 </AppShell>
 
 <style>
+	.usage {
+		display: grid;
+		gap: var(--s-1);
+	}
+
+	.usage p {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: var(--s-1) var(--s-3);
+		font-size: var(--t-ui);
+	}
+
+	.usage span,
+	.hint {
+		color: var(--ink-2);
+		font-size: var(--t-meta);
+	}
+
+	meter {
+		width: 100%;
+		height: 0.5rem;
+		border: 0;
+		border-radius: 1rem;
+		background: var(--sunken);
+		appearance: none;
+	}
+
+	meter::-webkit-meter-bar {
+		height: 0.5rem;
+		border: 0;
+		border-radius: 1rem;
+		background: var(--sunken);
+	}
+
+	meter::-webkit-meter-optimum-value {
+		border-radius: 1rem;
+		background: var(--accent);
+	}
+
+	meter::-webkit-meter-suboptimum-value,
+	meter::-webkit-meter-even-less-good-value {
+		border-radius: 1rem;
+		background: var(--warning);
+	}
+
+	meter::-moz-meter-bar {
+		border-radius: 1rem;
+		background: var(--accent);
+	}
+
+	meter:-moz-meter-sub-optimum::-moz-meter-bar {
+		background: var(--warning);
+	}
+
 	.where {
 		font-weight: 600;
 	}

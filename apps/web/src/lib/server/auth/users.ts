@@ -94,6 +94,9 @@ export interface UserAccount {
 	disabledAt: Date | null;
 	/** Most recent use of any of the user's sessions. */
 	lastSeenAt: Date | null;
+	/** Projects in the workspaces this person owns, and the size of their files. */
+	projects: number;
+	storageBytes: number;
 }
 
 export class WrongPasswordError extends Error {}
@@ -109,11 +112,20 @@ export async function listUsers(): Promise<UserAccount[]> {
 			created_at: Date;
 			disabled_at: Date | null;
 			last_seen_at: Date | null;
+			projects: number;
+			storage_bytes: number;
 		}[]
 	>`
 		SELECT u.id, u.email, u.display_name, u.is_admin, u.created_at, u.disabled_at,
-			(SELECT max(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at
+			(SELECT max(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
+			owned.projects, owned.storage_bytes
 		FROM users u
+		LEFT JOIN LATERAL (
+			SELECT count(p.id)::int AS projects, coalesce(sum(p.bytes), 0)::bigint AS storage_bytes
+			FROM workspace_members m
+			JOIN projects p ON p.workspace_id = m.workspace_id
+			WHERE m.user_id = u.id AND m.role = 'owner'
+		) owned ON true
 		ORDER BY u.created_at
 	`;
 	return rows.map((row) => ({
@@ -123,7 +135,9 @@ export async function listUsers(): Promise<UserAccount[]> {
 		isAdmin: row.is_admin,
 		createdAt: row.created_at,
 		disabledAt: row.disabled_at,
-		lastSeenAt: row.last_seen_at
+		lastSeenAt: row.last_seen_at,
+		projects: row.projects,
+		storageBytes: row.storage_bytes
 	}));
 }
 

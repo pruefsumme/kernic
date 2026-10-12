@@ -122,6 +122,19 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
 	return entries;
 }
 
+/** What a tree holds in total: the bytes of its files, and how many files and folders. */
+export async function treeUsage(root: string): Promise<{ bytes: number; entries: number }> {
+	const entries = await listTree(root);
+	return { bytes: entries.reduce((sum, entry) => sum + entry.size, 0), entries: entries.length };
+}
+
+/** Size of the file at a path, or 0 if there is none. */
+export async function treeFileSize(root: string, filePath: string): Promise<number> {
+	const absolute = await resolveInTree(root, normalize(filePath));
+	const info = await fs.stat(absolute).catch(() => null);
+	return info?.isFile() ? info.size : 0;
+}
+
 export async function readTreeFile(root: string, filePath: string): Promise<Buffer> {
 	const absolute = await resolveInTree(root, normalize(filePath));
 	try {

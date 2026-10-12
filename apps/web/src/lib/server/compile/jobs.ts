@@ -2,11 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
-import { projectArtifactsDir, projectTreeDir } from '../config';
+import { maxWaitingCompiles, projectArtifactsDir, projectTreeDir } from '../config';
 import { sql } from '../db/client';
 import type { PdfOptions } from '../../pdf-options';
 import { isUuid } from '../projects/projects';
 import { compileProject } from './compile-project';
+import { claimNextJob, pendingJobsOf } from './queue';
 import {
 	SnapshotChangedError,
 	WorkerUnavailableError,
@@ -132,6 +133,9 @@ export async function requestCompile(input: {
 		return toJob(pending);
 	}
 
+	// A bound on what one account can pile up in a queue it shares with others.
+	if ((await pendingJobsOf(sql, input.userId)) >= maxWaitingCompiles) throw new QueueFullError();
+
 	const [row] = await sql<JobRow[]>`
 		INSERT INTO compile_jobs (project_id, requested_by, format, status, options)
 		VALUES (${input.projectId}, ${input.userId}, ${input.format}, 'queued', ${options})
@@ -139,6 +143,15 @@ export async function requestCompile(input: {
 	`;
 	dispatch();
 	return toJob(row!);
+}
+
+/** The account already has as many compiles waiting as it may. */
+export class QueueFullError extends Error {
+	constructor() {
+		super(
+			'Too many compiles are waiting for your account. They finish one after another; try again in a moment.'
+		);
+	}
 }
 
 export async function getJob(projectId: string, jobId: string): Promise<CompileJob | null> {
@@ -240,19 +253,11 @@ function dispatch(): void {
 
 /** Claims and runs one queued job. Returns false when the queue is empty. */
 async function runNext(): Promise<boolean> {
-	const [claimed] = await sql<JobRow[]>`
-		UPDATE compile_jobs
-		SET status = 'running', started_at = now()
-		WHERE id = (
-			SELECT id FROM compile_jobs
-			WHERE status = 'queued'
-			ORDER BY created_at
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING *
-	`;
-	if (!claimed) return false;
+	// Accounts are served in turn; see `claimNextJob`.
+	const claimedId = await claimNextJob(sql);
+	if (!claimedId) return false;
+	const [claimed] = await sql<JobRow[]>`SELECT * FROM compile_jobs WHERE id = ${claimedId}`;
+	if (!claimed) return true;
 
 	// Let a second slot start on the remaining queue while this job compiles.
 	dispatch();

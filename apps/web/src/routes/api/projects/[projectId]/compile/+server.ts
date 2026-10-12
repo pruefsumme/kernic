@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { requestCompile } from '#lib/server/compile/jobs.ts';
+import { QueueFullError, requestCompile } from '#lib/server/compile/jobs.ts';
 import { requireProject } from '#lib/server/http.ts';
 import {
 	isDefaultPdfOptions,
@@ -32,6 +32,14 @@ export const POST: RequestHandler = async (event) => {
 		if (isDefaultPdfOptions(options)) options = null;
 	}
 
-	const job = await requestCompile({ projectId: project.id, userId: user.id, format, options });
+	const job = await requestCompile({
+		projectId: project.id,
+		userId: user.id,
+		format,
+		options
+	}).catch((cause) => {
+		if (cause instanceof QueueFullError) error(429, cause.message, { code: 'queue-full' });
+		throw cause;
+	});
 	return Response.json({ job }, { status: 202 });
 };
