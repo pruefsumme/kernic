@@ -4,8 +4,8 @@ A self-hosted, Git-first workspace for writing [Typst](https://typst.app/docs/) 
 multi-file project in the browser, see the rendered pages next to the source, and export a PDF.
 
 > Early development. Writing alone or in a shared workspace works and can be self-hosted;
-> checkpoints can be pushed to and pulled from a Git forge, but real-time collaboration and
-> creating a project from a repository are not built yet. See
+> projects can be pushed to, pulled from and made from a Git forge, but real-time collaboration
+> is not built yet. See
 > [Status](#status) and the [backlog](docs/backlog.md).
 
 To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**. What has
@@ -114,7 +114,6 @@ Working:
 
 Not built yet:
 
-- Importing from a Git repository
 - Review comments on a shared document
 - Real-time collaboration
 - A preview that follows each keystroke (it follows a pause in typing of 0.4 s)

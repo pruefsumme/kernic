@@ -6,7 +6,7 @@ import {
 	forgeReadOnlyToken,
 	forgeToken
 } from './environment.ts';
-import { appendSource, createProject, panel, saveState, test } from './helpers.ts';
+import { appendSource, createProject, panel, previewStatus, saveState, test } from './helpers.ts';
 
 /**
  * Pushing checkpoints to a Git repository, against a stand-in forge that is
@@ -301,4 +301,105 @@ test('what a repository must not bring in is refused, and nothing changes', asyn
 	await page.getByRole('button', { name: 'Files', exact: true }).click();
 	await expect(panel(page, 'Files').getByRole('button', { name: /^main\.typ/ })).toBeVisible();
 	await expect(panel(page, 'Files').getByText('passwd.typ')).toHaveCount(0);
+});
+
+/** Fills in the clone form and submits it. */
+async function cloneForm(
+	page: Page,
+	url: string,
+	options: { token?: string; branch?: string } = {}
+) {
+	await page.goto('/import/git');
+	await page.getByLabel('Address of the repository').fill(url);
+	await page.getByLabel('Branch').fill(options.branch ?? '');
+	await page.getByLabel('Access token (optional)').fill(options.token ?? '');
+	await page.getByRole('button', { name: 'Check repository' }).click();
+}
+
+test('a repository becomes a project with its history, connected to it', async ({ page }) => {
+	test.skip(!!externalBaseURL, 'a deployment under test has no forge it may talk to');
+	const repository = await newRepository('empty');
+	await changeOnForge(repository.name, 'main.typ', '= Cloned\n#include "chapters/one.typ"\n', {
+		message: 'Start the document'
+	});
+	await changeOnForge(repository.name, 'chapters/one.typ', '== One\nText from the repository.\n', {
+		message: 'Add chapter one'
+	});
+
+	// The dashboard offers it, and the form says what it needs.
+	await page.goto('/');
+	await page.getByRole('link', { name: 'Clone from Git' }).click();
+	await expect(page).toHaveURL('/import/git');
+
+	// The repository is checked like an archive, before anything is created.
+	await cloneForm(page, repository.url, { token: forgeToken });
+	await expect(page.getByRole('heading', { name: 'Check before importing' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Compiles' })).toBeVisible();
+	await expect(
+		page.getByText('Every file the sources refer to is in the repository.')
+	).toBeVisible();
+	await expect(page.getByLabel('Project name')).toHaveValue(/^empty-/);
+	await page.getByLabel('Project name').fill('Cloned thesis');
+	await page.getByRole('button', { name: 'Import project' }).click();
+
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}/);
+	await expect(previewStatus(page)).toContainText('Up to date');
+	await expect(
+		panel(page, 'Files').getByRole('button', { name: 'one.typ', exact: true })
+	).toBeVisible();
+
+	// Its history is the repository's own, and it is connected and in step with it.
+	await page.getByRole('button', { name: 'History', exact: true }).click();
+	const history = panel(page, 'History');
+	await expect(history.getByText('Add chapter one')).toBeVisible();
+	await expect(history.getByText('Start the document')).toBeVisible();
+	await expect(history.getByText('No changes since the last checkpoint.')).toBeVisible();
+	const remote = history.getByRole('region', { name: 'Git repository' });
+	await expect(remote).toContainText('All checkpoints are pushed.');
+	await remote.getByRole('button', { name: 'Pull' }).click();
+	await expect(remote).toContainText('The repository has nothing new.');
+
+	// The first push after cloning is a plain fast-forward.
+	await appendSource(page, '\nWritten here.');
+	await expect(saveState(page)).toContainText('Saved');
+	await history.getByRole('button', { name: 'Create checkpoint' }).click();
+	await page.getByLabel('Description').fill('Written here');
+	await page.getByRole('dialog').getByRole('button', { name: 'Create checkpoint' }).click();
+	await remote.getByRole('button', { name: 'Push to main' }).click();
+	await expect(remote).toContainText('Pushed.');
+	expect((await onForge('log', repository.name))[0]).toBe('Written here');
+});
+
+test('a repository that cannot be cloned says why, and nothing is created', async ({ page }) => {
+	test.skip(!!externalBaseURL, 'a deployment under test has no forge it may talk to');
+	const repository = await newRepository('empty');
+	const rejected = async () => {
+		await expect(page.getByRole('heading', { name: /cannot be imported/ })).toBeVisible();
+		return page.getByRole('alert');
+	};
+
+	// A private repository without a token, and with a wrong one.
+	await changeOnForge(repository.name, 'main.typ', '= Private\n');
+	await cloneForm(page, repository.url);
+	await expect(await rejected()).toContainText('or needs one');
+	await cloneForm(page, repository.url, { token: 'not-a-token-of-this-forge' });
+	await expect(await rejected()).toContainText('did not accept the token');
+
+	// A branch that is not there, and an address on a host the server does not use.
+	await cloneForm(page, repository.url, { token: forgeToken, branch: 'not-there' });
+	await expect(await rejected()).toContainText('no branch of that name');
+	await cloneForm(page, 'https://elsewhere.example.org/ada/x.git', { token: forgeToken });
+	await expect(page.getByRole('alert')).toContainText(
+		'not set up to connect to elsewhere.example.org'
+	);
+	await expect(page).toHaveURL('/import/git');
+
+	// A repository with a link in it, and one without any Typst file.
+	await changeOnForge(repository.name, 'passwd.typ', '', { symlink: '/etc/passwd' });
+	await cloneForm(page, repository.url, { token: forgeToken });
+	await expect(await rejected()).toContainText('a link');
+	const plain = await newRepository('busy');
+	await cloneForm(page, plain.url, { token: forgeToken });
+	await expect(await rejected()).toContainText('no .typ files');
+	await expect(page.getByText('Nothing was created')).toBeVisible();
 });

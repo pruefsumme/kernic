@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { QueueFullError, requestCompile } from '#lib/server/compile/jobs.ts';
 import { sql } from '#lib/server/db/client.ts';
 import { recordInitialCheckpoint } from '#lib/server/history/history.ts';
+import { remotesEnabled } from '#lib/server/history/remotes.ts';
 import { requireUser } from '#lib/server/http.ts';
 import {
 	ProjectInputError,
@@ -43,6 +44,7 @@ export const load: PageServerLoad = async (event) => {
 			thumbnailHash: thumbnail.get(project.id) ?? null
 		})),
 		workspaces: workspaces.filter((workspace) => canWrite(workspace.role)),
+		remotesEnabled,
 		templateCategories: [...templateCategories],
 		templates: templates.map(({ id, name, category, description, files }) => ({
 			id,

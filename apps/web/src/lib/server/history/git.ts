@@ -450,6 +450,8 @@ export class ProjectHistory {
 	): Promise<string> {
 		const protocol = new URL(remote.url).protocol.slice(0, -1);
 		const credentials = Buffer.from(`${remote.username}:${remote.token}`).toString('base64');
+		// Without a token the repository is asked as anyone would: public ones allow that.
+		const authorized = remote.token !== '';
 		try {
 			const { stdout } = await runGit(
 				this.#arguments([
@@ -470,9 +472,13 @@ export class ProjectHistory {
 				]),
 				{
 					...this.#environment,
-					GIT_CONFIG_COUNT: '1',
-					GIT_CONFIG_KEY_0: `http.${remote.url}.extraHeader`,
-					GIT_CONFIG_VALUE_0: `Authorization: Basic ${credentials}`
+					...(authorized
+						? {
+								GIT_CONFIG_COUNT: '1',
+								GIT_CONFIG_KEY_0: `http.${remote.url}.extraHeader`,
+								GIT_CONFIG_VALUE_0: `Authorization: Basic ${credentials}`
+							}
+						: {})
 				},
 				{
 					timeoutMs: GIT_REMOTE_TIMEOUT_MS,
@@ -621,10 +627,11 @@ export class ProjectHistory {
 	async #inspectTree(
 		treeish: string,
 		limits: TreeLimits
-	): Promise<{ bytes: number; files: number }> {
+	): Promise<{ bytes: number; files: number; entries: { path: string; size: number }[] }> {
 		const output = await this.#git(['ls-tree', '-r', '-l', '-z', '--full-tree', treeish]);
 		let bytes = 0;
 		let files = 0;
+		const entries: { path: string; size: number }[] = [];
 		for (const record of output.split('\0')) {
 			if (record === '') continue;
 			const entry = /^(\d+) (\w+) [0-9a-f]+ +(-|\d+)\t([\s\S]*)$/.exec(record);
@@ -662,6 +669,7 @@ export class ProjectHistory {
 			}
 			bytes += length;
 			files++;
+			entries.push({ path: name, size: length });
 		}
 		if (bytes > limits.maxProjectBytes || files > limits.maxProjectFiles) {
 			throw new PullError(
@@ -671,7 +679,31 @@ export class ProjectHistory {
 					: `That would make ${megabytes(bytes)}, more than a project may be (${megabytes(limits.maxProjectBytes)}). Nothing was taken over.`
 			);
 		}
-		return { bytes, files };
+		return { bytes, files, entries };
+	}
+
+	/**
+	 * For a project that is being made from a repository: makes what `fetchBranch`
+	 * brought in the project's one and only state, with its history, and writes its
+	 * files. The same checks as for a pull come first, so nothing unsuitable is
+	 * ever written. Returns the commit and the files.
+	 */
+	async adoptFetched(
+		theirs: string,
+		limits: TreeLimits
+	): Promise<{ commit: string; files: { path: string; size: number }[] }> {
+		await this.#ensureRepository();
+		const fetched = (
+			await this.#git(['rev-parse', '--verify', '--quiet', REMOTE_REF]).catch(() => '')
+		).trim();
+		if (!isCheckpointId(theirs) || fetched !== theirs) {
+			throw new PullError('changed', CHANGED_MESSAGE);
+		}
+		const { entries } = await this.#inspectTree(theirs, limits);
+		await this.#git(['update-ref', 'HEAD', theirs]);
+		await this.#git(['read-tree', '--reset', '-u', theirs]);
+		await this.#git(['update-ref', '-d', REMOTE_REF]);
+		return { commit: theirs, files: entries };
 	}
 
 	/** Runs a command that may exit with a code other than 0 and reports both. */
@@ -910,7 +942,7 @@ export type RemoteFailure =
 
 const REMOTE_FAILURE_MESSAGES: Record<RemoteFailure, string> = {
 	credentials:
-		'The repository did not accept the token. Check that it is still valid and may write to this repository.',
+		'The repository did not accept the token, or needs one. Check that it is still valid and may access this repository.',
 	'not-found':
 		'There is no repository at that address, or the token may not see it. Create an empty repository on the forge first.',
 	diverged:
@@ -1048,7 +1080,10 @@ function explainRemoteFailure(cause: unknown, remote: Remote): RemoteError {
 
 	if (kind === 'failed') {
 		// Never the token, not even by accident of a message quoting a header.
-		const scrubbed = output.replaceAll(remote.token, '***').slice(0, 2000);
+		const scrubbed = (remote.token === '' ? output : output.replaceAll(remote.token, '***')).slice(
+			0,
+			2000
+		);
 		console.error(`git could not talk to ${remote.url}:\n${scrubbed}`);
 	}
 	return new RemoteError(kind);

@@ -17,7 +17,7 @@
 	const report = $derived(pending.report);
 	let importing = $state(false);
 
-	// While the archive is being checked, ask for the result until it is there.
+	// While the archive or repository is being checked, ask for the result until it is there.
 	$effect(() => {
 		if (pending.status !== 'analyzing') return;
 		const timer = setInterval(async () => {
@@ -62,7 +62,7 @@
 >
 	{#snippet title()}
 		<a class="crumb" href="/">Projects</a>
-		<span class="where">Import</span>
+		<span class="where">{pending.fromRepository ? 'Clone' : 'Import'}</span>
 	{/snippet}
 
 	<div class="page">
@@ -71,7 +71,11 @@
 				<span class="spinner" aria-hidden="true"></span>
 				<div>
 					<h1>Checking {pending.sourceName}…</h1>
-					<p>Unpacking the archive, scanning its files and compiling the document once.</p>
+					<p>
+						{pending.fromRepository
+							? 'Fetching the repository, scanning its files and compiling the document once.'
+							: 'Unpacking the archive, scanning its files and compiling the document once.'}
+					</p>
 				</div>
 			</div>
 		{:else if pending.status === 'rejected'}
@@ -79,8 +83,14 @@
 				<div>
 					<h1>{pending.sourceName} cannot be imported</h1>
 					<p class="form-error" role="alert">{pending.error}</p>
-					<p>Nothing was created, and nothing from the archive was kept on the server.</p>
-					<a class="button primary" href="/import">Choose another archive</a>
+					<p>
+						Nothing was created, and nothing from the {pending.fromRepository
+							? 'repository'
+							: 'archive'} was kept on the server.
+					</p>
+					<a class="button primary" href={pending.fromRepository ? '/import/git' : '/import'}>
+						{pending.fromRepository ? 'Try another repository' : 'Choose another archive'}
+					</a>
 				</div>
 			</div>
 		{:else if report}
@@ -193,15 +203,22 @@
 					<section>
 						{#if report.missing.length === 0}
 							<h2 class="good"><Icon name="check" size={18} /> No missing files</h2>
-							<p>Every file the sources refer to is in the archive.</p>
+							<p>
+								Every file the sources refer to is in the {pending.fromRepository
+									? 'repository'
+									: 'archive'}.
+							</p>
 						{:else}
 							<h2 class="warn">
 								<Icon name="issues" size={18} />
 								{count(report.missing.length, 'referenced file is', 'referenced files are')} not in the
-								archive
+								{pending.fromRepository ? 'repository' : 'archive'}
 							</h2>
 							<p>
-								Add {report.missing.length === 1 ? 'it' : 'them'} to the archive and check again, or upload
+								{pending.fromRepository
+									? 'Add'
+									: `Add ${report.missing.length === 1 ? 'it' : 'them'} to the archive and check again, or`}
+								upload
 								{report.missing.length === 1 ? 'it' : 'them'} in the editor after importing.
 							</p>
 							<ul class="list">
@@ -238,12 +255,15 @@
 					<section>
 						<h2>What is kept</h2>
 						<p>
-							File names and folders are imported exactly as in the archive{report.strippedFolder
+							File names and folders are imported exactly as in the {pending.fromRepository
+								? 'repository'
+								: 'archive'}{report.strippedFolder
 								? `, except that the single enclosing folder “${report.strippedFolder}” is removed`
 								: ''}.
 							{#if report.fontFiles.length > 0}
-								The {count(report.fontFiles.length, 'font file', 'font files')} in the archive will be
-								available to the document.
+								The {count(report.fontFiles.length, 'font file', 'font files')} in the {pending.fromRepository
+									? 'repository'
+									: 'archive'} will be available to the document.
 							{/if}
 						</p>
 					</section>

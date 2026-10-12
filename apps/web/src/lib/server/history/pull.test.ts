@@ -391,3 +391,58 @@ describe('what a repository may not bring in', () => {
 		).rejects.toBeInstanceOf(PullError);
 	});
 });
+
+describe('making a project from a repository', () => {
+	it('takes over the files and the whole history, in step with the repository', async () => {
+		const { name, remote } = await newRepository();
+		await forge.commitFiles(name, 'main', [{ path: 'main.typ', content: '= One\n' }], 'First');
+		await forge.commitFiles(
+			name,
+			'main',
+			[{ path: 'chapters/two.typ', content: 'Two\n' }],
+			'Second'
+		);
+
+		const theirs = await history.fetchBranch(remote, 50 * MB);
+		const adopted = await history.adoptFetched(theirs, limits);
+		expect(adopted.commit).toBe(theirs);
+		expect(adopted.files.map((file) => file.path).sort()).toEqual(['chapters/two.typ', 'main.typ']);
+		expect(await read('chapters/two.typ')).toBe('Two\n');
+		expect((await history.list()).map((checkpoint) => checkpoint.message)).toEqual([
+			'Second',
+			'First'
+		]);
+		// Files and index agree with the history: there is nothing to record, and nothing to push.
+		expect(await history.changes()).toEqual([]);
+		expect(await history.head()).toBe(theirs);
+		expect(await history.checkpointsSince(theirs)).toBe(0);
+		// And the next step is an ordinary one.
+		await write('main.typ', '= One, edited\n');
+		await history.createCheckpoint('Edited', author);
+		await history.push(remote);
+		expect(await forge.log(name, 'main')).toEqual(['Edited', 'Second', 'First']);
+	});
+
+	it('writes nothing of what a project may not hold', async () => {
+		const { name, remote } = await newRepository();
+		await forge.commitFiles(name, 'main', [
+			{ path: 'main.typ', content: '= One\n' },
+			{ path: 'passwd.typ', symlinkTo: '/etc/passwd' }
+		]);
+		const theirs = await history.fetchBranch(remote, 50 * MB);
+		await expect(history.adoptFetched(theirs, limits)).rejects.toMatchObject({
+			kind: 'unsafe-content'
+		});
+		expect(await readdir(path.join(projectDirectory, 'tree'))).toEqual([]);
+		expect(await history.head()).toBeNull();
+	});
+
+	it('refuses a state that was not just fetched', async () => {
+		const { name, remote } = await newRepository();
+		await forge.commitFiles(name, 'main', [{ path: 'main.typ', content: '= One\n' }]);
+		await history.fetchBranch(remote, 50 * MB);
+		await expect(history.adoptFetched('b'.repeat(40), limits)).rejects.toMatchObject({
+			kind: 'changed'
+		});
+	});
+});
