@@ -1,0 +1,14 @@
+# Checks that the backups in the repository can be restored (verify-backup.sh --from-repo
+# --full). Run by kernic-verify.timer; install it like kernic-backup.service.
+[Unit]
+Description=Kernic backup check
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/kernic/deploy
+ExecStart=/srv/kernic/deploy/verify-backup.sh --from-repo --full
+TimeoutStartSec=6h
+Nice=10
+IOSchedulingClass=idle

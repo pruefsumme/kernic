@@ -1,7 +1,7 @@
 #!/bin/sh
 # Backs up a Kernic installation: the database and all project files.
 #
-#   ./backup.sh [directory] [--label NAME]      default directory: ./backups
+#   ./backup.sh [directory] [--label NAME] [--local-only]      default directory: ./backups
 #
 # Each run makes a dated folder in the directory (a relative one is relative to deploy/):
 #   database.dump   the database (PostgreSQL custom format)
@@ -14,10 +14,16 @@
 # beyond KERNIC_BACKUP_KEEP_LOCAL (default 7, 0 keeps all). --label adds a name to the
 # folder, such as "pre-upgrade"; labelled folders are never removed by this.
 #
+# With KERNIC_BACKUP_REPOSITORY set (docs/backups.md), the folder is then sent, encrypted, to that
+# repository (backup-upload.sh) while the app is running again; --local-only skips that.
+# KERNIC_BACKUP_PING_URL gets a message when a run starts and when it ends, for a monitor
+# that raises the alarm when the end does not come.
+#
 # Not in the backup: deploy/.env. It holds KERNIC_SECRET_KEY, without which the Git access
 # tokens in the database cannot be read; keep a copy of it somewhere else.
 #
-# Exit status: 0 done, 1 failed, 2 wrong use, 4 another backup or restore is running.
+# Exit status: 0 done, 1 failed, 2 wrong use, 3 the backup was made but not sent, 4 another
+# backup or restore is running.
 set -eu
 cd "$(dirname "$0")"
 # shellcheck source=backup-lib.sh
@@ -25,6 +31,7 @@ cd "$(dirname "$0")"
 
 base=backups
 label=
+local_only=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-h | --help)
@@ -36,6 +43,7 @@ while [ $# -gt 0 ]; do
 		label="$2"
 		shift
 		;;
+	--local-only) local_only=1 ;;
 	-*) die 2 "Unknown option $1 (see ./backup.sh --help)" ;;
 	*) base="$1" ;;
 	esac
@@ -47,6 +55,10 @@ esac
 
 umask 077
 take_lock
+# A backup that restore.sh or upgrade.sh makes on the way is not a run to report on.
+reporting=0
+if [ "${KERNIC_LOCK_HELD:-}" != 1 ]; then reporting=1; fi
+if [ "$reporting" = 1 ]; then ping KERNIC_BACKUP_PING_URL start; fi
 
 stamp="$(date +%Y%m%d-%H%M%S)"
 final="$base/$stamp${label:+-$label}"
@@ -68,6 +80,9 @@ finish() {
 		printf '\nTHE APP IS STOPPED and could not be started again.\nRun this in %s:  docker compose up -d --wait\n' "$PWD" >&2
 	fi
 	if [ "$status" -ne 0 ]; then rm -rf "$partial"; fi
+	if [ "$reporting" = 1 ]; then
+		if [ "$status" -eq 0 ]; then ping KERNIC_BACKUP_PING_URL ok; else ping KERNIC_BACKUP_PING_URL fail; fi
+	fi
 	release_lock
 	exit "$status"
 }
@@ -166,6 +181,11 @@ if [ "$keep" -gt 0 ]; then
 	done
 fi
 
-if [ -n "$(setting KERNIC_SECRET_KEY)" ]; then
+if [ "$local_only" != 1 ] && [ -n "$(setting KERNIC_BACKUP_REPOSITORY)" ]; then
+	say "Sending it to the repository..."
+	if ! ./backup-upload.sh "$final"; then
+		die 3 "The backup was made ($final) but not sent. Send it again with:  ./backup-upload.sh $final"
+	fi
+elif [ -n "$(setting KERNIC_SECRET_KEY)" ]; then
 	say "Remember: KERNIC_SECRET_KEY in deploy/.env is not part of this backup. Keep it somewhere else too."
 fi

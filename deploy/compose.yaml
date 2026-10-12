@@ -110,9 +110,43 @@ services:
       retries: 20
     networks: [database]
 
+  # Sends backups to another place (docs/backups.md). Not part of the running stack:
+  # backup.sh starts it for the length of an upload (profile "backup"). It is the only
+  # service on `egress`. It has no database credentials and cannot see the data volume: it
+  # reads, read-only, the copy that backup.sh made on this machine, and encrypts it before
+  # it leaves.
+  backup:
+    profiles: [backup]
+    build:
+      context: ./backup
+    image: ${KERNIC_BACKUP_IMAGE:-kernic-backup}
+    environment:
+      RESTIC_REPOSITORY: ${KERNIC_BACKUP_REPOSITORY:-}
+      RESTIC_PASSWORD: ${KERNIC_BACKUP_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${KERNIC_BACKUP_S3_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${KERNIC_BACKUP_S3_SECRET:-}
+      AWS_DEFAULT_REGION: ${KERNIC_BACKUP_S3_REGION:-}
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+      HOME: /tmp
+    volumes:
+      # Settings of the destination (rclone's login, an SSH key) and restic's cache. Writable:
+      # rclone renews its login there.
+      - ${KERNIC_BACKUP_CONFIG_DIR:-./backup-config}:/config
+      # A repository on another disk of this machine, if that is the destination.
+      - ${KERNIC_BACKUP_LOCAL_REPO:-./backup-config/repo}:/repo
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks: [egress]
+
 networks:
-  # Proxy <-> app. The only network with a route to the outside.
+  # Proxy <-> app. A network with a route to the outside.
   edge:
+  # The backup job <-> the outside. Nothing else joins it.
+  egress:
   # App <-> PostgreSQL.
   database:
     internal: true

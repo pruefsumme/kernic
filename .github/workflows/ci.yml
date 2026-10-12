@@ -172,6 +172,9 @@ jobs:
       # this stack, which is thrown away with the runner.
       - name: Backup and restore
         run: scripts/backup-roundtrip.sh --replace-everything
+      # Local disk, rclone and an S3 server (rclone serves one): no account anywhere is needed.
+      - name: Backups sent to another place, and restored from there
+        run: scripts/backup-offsite-roundtrip.sh --replace-everything
 
       - name: Show the logs of a failed run
         if: failure()
@@ -202,8 +205,12 @@ jobs:
         run: docker buildx build --platform linux/arm64 --load -t kernic-worker:arm64 -f apps/worker/Dockerfile .
       - name: Build the app image
         run: docker buildx build --platform linux/arm64 --load -t kernic-app:arm64 -f apps/web/Dockerfile .
+      - name: Build the backup image
+        run: docker buildx build --platform linux/arm64 --load -t kernic-backup:arm64 deploy/backup
       - name: The tools in the worker image run
         run: |
+          docker run --rm --platform linux/arm64 kernic-backup:arm64 version
+          docker run --rm --platform linux/arm64 --entrypoint rclone kernic-backup:arm64 version
           docker run --rm --platform linux/arm64 kernic-worker:arm64 typst --version
           docker run --rm --platform linux/arm64 kernic-worker:arm64 tinymist --version
           docker run --rm --platform linux/arm64 kernic-app:arm64 node --version

@@ -1,0 +1,22 @@
+# Backs Kernic up (and sends the backup off the machine, if that is set up). Run by
+# kernic-backup.timer. Install:
+#
+#   sudo cp deploy/systemd/kernic-backup.* /etc/systemd/system/
+#   sudo systemctl edit --full kernic-backup.service     # set the two paths below
+#   sudo systemctl enable --now kernic-backup.timer
+#
+# Look at the last run with:  journalctl -u kernic-backup.service
+[Unit]
+Description=Kernic backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# The folder of this installation's compose.yaml, and where backups are kept.
+WorkingDirectory=/srv/kernic/deploy
+ExecStart=/srv/kernic/deploy/backup.sh /srv/backups/kernic
+# The first upload of a large installation can take hours; a hung one should not run forever.
+TimeoutStartSec=12h
+Nice=10
+IOSchedulingClass=idle

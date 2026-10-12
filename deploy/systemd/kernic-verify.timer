@@ -1,0 +1,11 @@
+# Runs kernic-verify.service every week. See kernic-backup.service for how to install.
+[Unit]
+Description=Kernic backup check, every week
+
+[Timer]
+OnCalendar=Sun *-*-* 05:30:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

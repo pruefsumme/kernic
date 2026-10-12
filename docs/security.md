@@ -263,6 +263,15 @@ connections and hold other people's credentials, so:
   checks that a killed backup starts the app again and that two runs cannot overlap. Backup
   folders are private to their owner but **not encrypted**: whoever can read one has the
   password hashes, the encrypted Git tokens and every project. Keep them where only you can.
+- Off-site backups (`docs/backups.md`): sent by a separate container that sees only a finished
+  copy (read-only), the settings of the destination and the internet, and has no access to the
+  database or the data volume; read-only root file system, no capabilities, no Docker socket.
+  Everything is encrypted by restic (AES-256, authenticated) before it leaves. **Tested** against a
+  repository on another disk, through rclone and on an S3 server: restore onto a damaged
+  installation, a wrong password, a check of the repository. **Not tested** against the real
+  services (B2, a Storage Box, Google Drive), and not with SSH at all in the pipeline. The
+  repository's password and its login are in `deploy/.env` on the server: whoever has the server
+  can read the backups and, unless the destination prevents it, delete them.
 - Upgrades: migrations run in one transaction under a lock. **Tested** against PostgreSQL: a
   failing migration leaves the database unchanged, edited migrations and databases from a newer
   version are refused, two instances starting together apply each migration once. The built app

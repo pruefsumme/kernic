@@ -61,3 +61,88 @@ release_lock() {
 	if [ "$lock_taken" = 1 ]; then rm -rf "$lock_dir"; fi
 	lock_taken=0
 }
+
+# --- Sending backups to another place (docs/backups.md) ---
+
+# Where the settings of the destination live (rclone's login, an SSH key, restic's cache), and
+# the folder of a repository on another disk. Both are made here, owned by whoever runs the
+# scripts: Docker would make them as root, and the backup job runs as this user.
+backup_folders() {
+	config_dir="$(setting KERNIC_BACKUP_CONFIG_DIR)"
+	config_dir="${config_dir:-./backup-config}"
+	local_repo="$(setting KERNIC_BACKUP_LOCAL_REPO)"
+	local_repo="${local_repo:-./backup-config/repo}"
+	mkdir -p "$config_dir/cache" "$config_dir/rclone" "$config_dir/ssh" "$local_repo"
+	chmod 700 "$config_dir" "$config_dir/ssh" 2>/dev/null || true
+}
+
+# Builds the image of the backup job if there is none, or it has changed.
+backup_image() { docker compose build --quiet backup >/dev/null; }
+
+# backup_run [docker compose run options] backup [restic arguments]
+# Runs restic, or with --entrypoint another tool of the image, in the backup job. With Docker
+# as root, as the user who runs the script, so that what the job reads and writes on this
+# machine is theirs and not root's (an SFTP repository needs that user in the container's list
+# of users, for ssh). With rootless Docker the container's root already is that user.
+backup_run() {
+	# No terminal, unless backup-tool.sh asks for one (rclone config is interactive).
+	tty=-T
+	if [ "${KERNIC_BACKUP_TTY:-}" = 1 ]; then tty=; fi
+	if ! docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless; then
+		case "$(setting KERNIC_BACKUP_REPOSITORY)" in
+		sftp:*) set -- -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro "$@" ;;
+		esac
+		set -- --user "$(id -u):$(id -g)" "$@"
+	fi
+	# shellcheck disable=SC2086 # $tty is one option or nothing
+	docker compose run --rm $tty "$@"
+}
+
+# What is needed to rebuild an installation, and nothing that can be made again: the key of
+# the stored Git tokens, the address, the image versions, the limits. Not the passwords of the
+# database and the worker, and not the settings of the backup itself. It goes into the
+# encrypted repository only, never into the folder next to the backup.
+write_secrets_copy() {
+	if [ -f .env ]; then
+		grep -E '^(KERNIC_SECRET_KEY|KERNIC_SITE_ADDRESS|KERNIC_HTTP_PORT|KERNIC_HTTPS_PORT|KERNIC_APP_IMAGE|KERNIC_WORKER_IMAGE|KERNIC_PACKAGE_REGISTRY|KERNIC_MAX_[A-Z_]*|KERNIC_GIT_HOSTS|KERNIC_WORKER_(CPUS|MEMORY)|KERNIC_COMPILE_TIMEOUT_MS|KERNIC_WARM_SESSIONS|KERNIC_LANGUAGE_SESSIONS)=' .env >"$1" || true
+	else
+		: >"$1"
+	fi
+}
+
+# ping <setting that holds the address> <start|ok|fail>
+# Tells a monitoring service (Healthchecks, Uptime Kuma, ...) how a run went; it raises the
+# alarm when the "ok" does not come. A failing ping never fails the run. An address with a
+# query (Uptime Kuma's push URLs) is only called for "ok".
+ping() {
+	address="$(setting "$1")"
+	[ -n "$address" ] || return 0
+	case "$address" in
+	*\?*)
+		[ "$2" = ok ] || return 0
+		target="$address"
+		;;
+	*)
+		case "$2" in
+		start) target="$address/start" ;;
+		fail) target="$address/fail" ;;
+		*) target="$address" ;;
+		esac
+		;;
+	esac
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsS -m 10 --retry 2 -o /dev/null "$target" >/dev/null 2>&1 || true
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -T 10 -O /dev/null "$target" >/dev/null 2>&1 || true
+	fi
+}
+
+# fetch_snapshot <snapshot or "latest"> <empty folder>: brings a snapshot of the repository
+# back into the folder: stage/ (the backup) and secrets/kernic.env.
+fetch_snapshot() {
+	if [ "$1" = latest ]; then
+		backup_run -v "$2:/out" backup restore latest --host kernic --tag kernic --target /out --quiet
+	else
+		backup_run -v "$2:/out" backup restore "$1" --target /out --quiet
+	fi
+}

@@ -1,0 +1,12 @@
+# Runs kernic-backup.service every night. See the service file for how to install.
+[Unit]
+Description=Kernic backup, every night
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+# Not all machines at the same minute; and a run that was missed (machine off) happens at boot.
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

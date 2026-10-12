@@ -69,6 +69,21 @@ else
 	if [ -n "$postgres" ] && [ "$postgres" = "$worker" ]; then
 		fail "POSTGRES_PASSWORD and KERNIC_WORKER_TOKEN must be two different values"
 	fi
+	if [ -n "$(value KERNIC_BACKUP_REPOSITORY)" ]; then
+		[ "$(value KERNIC_BACKUP_PASSWORD | wc -c)" -gt 12 ] \
+			&& ok "KERNIC_BACKUP_PASSWORD is set (keep a copy of it outside this server)" \
+			|| fail "KERNIC_BACKUP_REPOSITORY is set, so KERNIC_BACKUP_PASSWORD must be set too (12 characters or more)"
+		case "$(value KERNIC_BACKUP_REPOSITORY)" in
+		s3:*)
+			[ -n "$(value KERNIC_BACKUP_S3_KEY_ID)" ] && [ -n "$(value KERNIC_BACKUP_S3_SECRET)" ] \
+				|| fail "an s3: repository needs KERNIC_BACKUP_S3_KEY_ID and KERNIC_BACKUP_S3_SECRET"
+			;;
+		sftp:*)
+			[ -f "$(value KERNIC_BACKUP_CONFIG_DIR | sed 's/^$/.\/backup-config/')/ssh/id_ed25519" ] \
+				|| fail "an sftp: repository needs the SSH key as ssh/id_ed25519 in the backup settings folder (docs/backups.md)"
+			;;
+		esac
+	fi
 	if [ -n "$(value KERNIC_GIT_HOSTS)" ]; then
 		[ "$(value KERNIC_SECRET_KEY | wc -c)" -gt 32 ] \
 			&& ok "KERNIC_SECRET_KEY is set for the Git hosts" \
