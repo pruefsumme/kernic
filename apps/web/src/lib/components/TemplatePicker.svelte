@@ -20,7 +20,8 @@
 		workspaces,
 		error = null,
 		initialName = '',
-		initialTemplateId
+		initialTemplateId,
+		initialWorkspaceId
 	}: {
 		open: boolean;
 		templates: TemplateOption[];
@@ -30,6 +31,8 @@
 		error?: string | null;
 		initialName?: string;
 		initialTemplateId?: string;
+		/** The workspace offered first, when the picker was opened from one. */
+		initialWorkspaceId?: string | null;
 	} = $props();
 
 	let dialog: HTMLDialogElement;
@@ -188,7 +191,9 @@
 						<label for="template-workspace">Workspace</label>
 						<select class="input" id="template-workspace" name="workspace">
 							{#each workspaces as workspace (workspace.id)}
-								<option value={workspace.id}>{workspace.name}</option>
+								<option value={workspace.id} selected={workspace.id === initialWorkspaceId}>
+									{workspace.name}
+								</option>
 							{/each}
 						</select>
 					</div>

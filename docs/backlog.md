@@ -117,7 +117,7 @@ details.
 - History: restore a single file; compare any two checkpoints.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Replace across all files of a project (search across them exists).
-- Project folders on the dashboard, and a filter by workspace.
+- Project folders on the dashboard.
 - Review comments on a shared document, for readers with a link and for members.
 - A PDF download for readers with a link (needs a bound on what anonymous readers can make the
   server compile).
@@ -186,7 +186,10 @@ details.
 - Settings pages in sections: the account, a workspace and a project's settings each list their
   sections at the side (across the top on a phone) and show one at a time, as groups; the
   address names the section, so a section can be linked to and survives a reload and a form.
-  Workspaces are cards, with their storage, and a workspace lists its projects.
+- Workspaces as one screen: all of them listed at the side, the personal one apart from the
+  shared ones, and the chosen one beside the list with its projects, members, invitations and
+  settings as tabs. The dashboard marks projects of shared workspaces and can show one
+  workspace's projects alone.
 - Pushing checkpoints to a Git repository on a forge: an owner connects a project to a
   repository on a host the administrator allows, with an access token that is stored encrypted;
   editors push from the History panel, which shows how many checkpoints the repository lacks.

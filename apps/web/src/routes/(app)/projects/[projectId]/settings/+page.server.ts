@@ -35,7 +35,7 @@ export const load: PageServerLoad = async (event) => {
 	const entries = await listTree(projectTreeDir(project.id));
 	const workspaces = await listWorkspaceOverviews(user.id);
 	const name = (workspace: { kind: string; name: string }) =>
-		workspace.kind === 'personal' ? 'Your projects (only you)' : workspace.name;
+		workspace.kind === 'personal' ? 'Personal (only you)' : workspace.name;
 
 	return {
 		project: { id: project.id, name: project.name, entryPath: project.entryPath },

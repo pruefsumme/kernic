@@ -53,16 +53,41 @@
 	});
 
 	const canCreate = $derived(data.workspaces.length > 0);
+
+	/** The workspaces the projects are in, the personal one first: what the list can be narrowed to. */
+	const places = $derived.by(() => {
+		const found: { id: string; name: string; shared: boolean; count: number }[] = [];
+		for (const project of data.projects) {
+			let place = found.find((candidate) => candidate.id === project.workspaceId);
+			if (!place) {
+				place = {
+					id: project.workspaceId,
+					name: project.shared ? project.workspaceName : 'Personal',
+					shared: project.shared,
+					count: 0
+				};
+				found.push(place);
+			}
+			place.count++;
+		}
+		return found.sort(
+			(a, b) => Number(a.shared) - Number(b.shared) || a.name.localeCompare(b.name)
+		);
+	});
+	/** Which workspace's projects are shown; null for all of them. */
+	let chosen = $state<string | null>(null);
+	const place = $derived(places.find((candidate) => candidate.id === chosen) ?? null);
+
 	const projects = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
-		const matching = data.projects.filter((project) => project.name.toLowerCase().includes(needle));
+		const matching = data.projects.filter(
+			(project) =>
+				project.name.toLowerCase().includes(needle) && (!place || project.workspaceId === place.id)
+		);
 		return sort === 'name'
 			? matching.toSorted((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
 			: matching;
 	});
-	const showWorkspace = $derived(
-		new Set(data.projects.map((project) => project.workspaceId)).size > 1
-	);
 </script>
 
 <svelte:head>
@@ -137,7 +162,13 @@
 		{:else}
 			<div class="toolbar">
 				<h1>
-					{query.trim() ? `Results for “${query.trim()}”` : 'All projects'}
+					{query.trim()
+						? `Results for “${query.trim()}”`
+						: place
+							? place.shared
+								? place.name
+								: 'Personal projects'
+							: 'All projects'}
 				</h1>
 				<div class="controls">
 					<label class="sort">
@@ -172,6 +203,26 @@
 				</div>
 			</div>
 
+			{#if places.length > 1}
+				<!-- Personal projects and those of each shared workspace, told apart and narrowed to. -->
+				<div class="places" role="group" aria-label="Show projects of">
+					<button type="button" aria-pressed={place === null} onclick={() => (chosen = null)}>
+						All <span class="count">{data.projects.length}</span>
+					</button>
+					{#each places as candidate (candidate.id)}
+						<button
+							type="button"
+							aria-pressed={place?.id === candidate.id}
+							onclick={() => (chosen = candidate.id)}
+						>
+							<Icon name={candidate.shared ? 'people' : 'person'} size={16} />
+							{candidate.name}
+							<span class="count">{candidate.count}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
 			{#if projects.length === 0}
 				<p class="notice">
 					No project name contains “{query.trim()}”.
@@ -196,7 +247,12 @@
 								</span>
 								<span class="name">{project.name}</span>
 								<span class="meta">
-									{#if showWorkspace}<span>{project.workspaceName}</span>{/if}
+									{#if project.shared}
+										<span class="shared" title="In the shared workspace {project.workspaceName}">
+											<Icon name="people" size={14} />
+											{project.workspaceName}
+										</span>
+									{/if}
 									{#if project.role === 'viewer'}<span>Read only</span>{/if}
 									<time
 										datetime={project.updatedAt.toISOString()}
@@ -219,6 +275,7 @@
 	templates={data.templates}
 	categories={data.templateCategories}
 	workspaces={data.workspaces}
+	initialWorkspaceId={page.url.searchParams.get('workspace') ?? place?.id}
 	error={form?.message}
 	initialName={form?.name ?? ''}
 	initialTemplateId={form?.templateId || undefined}
@@ -461,6 +518,57 @@
 		border-color: var(--accent);
 		background: var(--accent-soft);
 		color: var(--accent);
+		font-weight: 500;
+	}
+
+	.places {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--s-2);
+		margin-bottom: var(--s-4);
+	}
+
+	.places button {
+		display: flex;
+		align-items: center;
+		gap: var(--s-2);
+		min-height: 2rem;
+		padding: 0 var(--s-3);
+		border: 1px solid var(--rule);
+		border-radius: 2rem;
+		background: var(--surface);
+		color: var(--ink-2);
+		font: inherit;
+		font-size: var(--t-ui);
+		font-weight: 500;
+		cursor: pointer;
+		transition:
+			background-color var(--fast) var(--ease-out),
+			color var(--fast) var(--ease-out);
+	}
+
+	.places button:hover {
+		background: var(--sunken);
+		color: var(--ink);
+	}
+
+	.places button[aria-pressed='true'] {
+		border-color: transparent;
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.places .count {
+		color: var(--ink-3);
+		font-size: var(--t-meta);
+		font-weight: 400;
+	}
+
+	.shared {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--ink);
 		font-weight: 500;
 	}
 
