@@ -1,5 +1,5 @@
 import { expect, type Browser, type Page } from '@playwright/test';
-import { openSection, test } from './helpers.ts';
+import { openSection, openSignIn, submitSignIn, test } from './helpers.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -16,10 +16,8 @@ async function freshPage(browser: Browser): Promise<Page> {
 }
 
 async function signIn(page: Page, password: string): Promise<void> {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill(person.email);
-	await page.getByLabel('Password').fill(password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await openSignIn(page);
+	await submitSignIn(page, person.email, password);
 }
 
 /** Creates a link on the People page and returns its address. */

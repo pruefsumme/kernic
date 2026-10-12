@@ -7,9 +7,11 @@ import {
 	appendSource,
 	createProject,
 	loadedPages,
+	openSignIn,
 	pages,
 	panel,
 	saveState,
+	submitSignIn,
 	test
 } from './helpers.ts';
 
@@ -50,10 +52,8 @@ async function signInAsOutsider(browser: Browser) {
 	await ensureOutsider();
 	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	const page = await context.newPage();
-	await page.goto('/login');
-	await page.getByLabel('Email').fill(outsider.email);
-	await page.getByLabel('Password').fill(outsider.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await openSignIn(page);
+	await submitSignIn(page, outsider.email, outsider.password);
 	await expect(page).toHaveURL('/');
 	return { context, page };
 }
@@ -305,12 +305,10 @@ test('a disabled account is signed out everywhere and cannot sign in', async ({ 
 	const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 	try {
 		await sql`UPDATE users SET disabled_at = now() WHERE email = ${outsider.email}`;
-		await page.goto('/');
+		await page.goto('/', { waitUntil: 'networkidle' });
 		await expect(page).toHaveURL(/\/login/);
 
-		await page.getByLabel('Email').fill(outsider.email);
-		await page.getByLabel('Password').fill(outsider.password);
-		await page.getByRole('button', { name: 'Sign in' }).click();
+		await submitSignIn(page, outsider.email, outsider.password);
 		await expect(page.getByRole('alert')).toContainText('Email or password is not correct');
 	} finally {
 		await sql`UPDATE users SET disabled_at = NULL WHERE email = ${outsider.email}`;
