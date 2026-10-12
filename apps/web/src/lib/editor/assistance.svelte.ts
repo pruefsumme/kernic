@@ -15,6 +15,7 @@ import {
 import type { Extension, Text } from '@codemirror/state';
 import { keymap, type EditorView } from '@codemirror/view';
 import type { ProjectApi } from './api.ts';
+import type { Place } from './jump.ts';
 
 /**
  * Editor assistance from a language server (Tinymist) on the server:
@@ -206,6 +207,13 @@ class HttpTransport implements Transport {
 		void this.#api.closeLanguage(this.connection).catch(() => {});
 	}
 
+	/** Resolves once everything written so far has reached the server. */
+	async sent(): Promise<void> {
+		while ((this.#sending || this.#queue.length > 0) && !this.#closed) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+	}
+
 	/** Messages go out in the order they were written, a batch at a time. */
 	async #flush(): Promise<void> {
 		if (this.#sending) return;
@@ -234,6 +242,8 @@ export class Assistance {
 	/** `ready` while a language server answers; `unavailable` with a reason when none can be had. */
 	status = $state<'idle' | 'connecting' | 'ready' | 'unavailable'>('idle');
 	reason = $state<string | null>(null);
+	/** Whether the server can tell which place on a page belongs to which place in the source. */
+	canJump = $state(false);
 
 	readonly client: LSPClient;
 	readonly #api: ProjectApi;
@@ -292,6 +302,7 @@ export class Assistance {
 			if (this.#transport !== transport) return;
 			this.#attempts = 0;
 			this.reason = null;
+			this.canJump = opened.jump;
 			this.status = 'ready';
 		} catch {
 			if (this.client.connected) this.client.disconnect();
@@ -299,6 +310,46 @@ export class Assistance {
 			this.#transport = null;
 			this.#fail('Editor assistance could not be reached.');
 		}
+	}
+
+	/**
+	 * Where on the rendered pages a place in the source ends up: each time the
+	 * page (counted from 1) and a point on it in points. If the place prints
+	 * nothing itself, the first of `nearby` that does answers. Empty if nowhere, or unknown.
+	 */
+	async pageOf(
+		path: string,
+		place: Place,
+		nearby: Place[]
+	): Promise<{ page: number; x: number; y: number }[]> {
+		const connection = await this.#settled();
+		if (!connection) return [];
+		const answer = await this.#api.jump(connection, { path, ...place, nearby }).catch(() => null);
+		return answer?.positions ?? [];
+	}
+
+	/** Which place in the source made what is at a point of a page. Null if nothing, or unknown. */
+	async sourceOf(
+		page: number,
+		x: number,
+		y: number
+	): Promise<{ path: string; line: number; character: number } | null> {
+		const connection = await this.#settled();
+		if (!connection) return null;
+		const answer = await this.#api.jump(connection, { page, x, y }).catch(() => null);
+		return answer?.source ?? null;
+	}
+
+	/**
+	 * The connection to ask over, once the server has what was typed: its answer
+	 * is about the text it knows, which has to be the text on screen.
+	 */
+	async #settled(): Promise<string | null> {
+		const transport = this.#transport;
+		if (!transport || !this.canJump || this.status !== 'ready') return null;
+		this.client.sync();
+		await transport.sent();
+		return this.#transport === transport ? transport.connection : null;
 	}
 
 	/** Tells the language server that files of the project changed on the server. */
@@ -318,6 +369,7 @@ export class Assistance {
 		if (this.client.connected) this.client.disconnect();
 		this.#transport?.close();
 		this.#transport = null;
+		this.canJump = false;
 		this.status = 'idle';
 	}
 
@@ -325,6 +377,7 @@ export class Assistance {
 		if (this.#transport !== transport || this.#disposed) return;
 		this.#transport = null;
 		if (this.client.connected) this.client.disconnect();
+		this.canJump = false;
 		this.status = 'idle';
 		this.#schedule();
 	}

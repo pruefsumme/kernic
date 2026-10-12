@@ -8,14 +8,17 @@ import { appendSource, createProject, editorText, previewStatus, test } from './
  */
 
 let offered = true;
+/** Whether pages can be traced to their source: not while compilers run under bubblewrap. */
+let jumps = true;
 test.beforeAll(async () => {
 	// Against an external deployment the worker is not reachable; assume it is equipped.
 	if (externalBaseURL) return;
 	const health = await fetch(`http://127.0.0.1:${workerPort}/healthz`).then(
-		(response) => response.json() as Promise<{ editorAssistance?: boolean }>,
-		() => ({ editorAssistance: false })
+		(response) => response.json() as Promise<{ editorAssistance?: boolean; sandbox?: string }>,
+		() => ({ editorAssistance: false, sandbox: undefined })
 	);
 	offered = health.editorAssistance === true;
+	jumps = offered && health.sandbox !== 'bwrap';
 	// Skipping is for machines without Tinymist; a pipeline has to have it.
 	if (process.env.CI) expect(offered, 'the worker offers editor assistance').toBe(true);
 });
@@ -88,4 +91,71 @@ test('documentation cannot bring markup of its own into the page', async ({ page
 	await expect(hover).toContainText('danger');
 	await expect(hover.locator('img, script')).toHaveCount(0);
 	expect(await page.evaluate(() => (window as { planted?: number }).planted)).toBeUndefined();
+});
+
+test('the cursor is found on the pages, and a click on a page opens its source', async ({
+	page
+}) => {
+	test.skip(!offered, 'the worker has no language server installed');
+	// Without the scrolling animation, a page is where it will stay when it is measured.
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	const opening = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/lsp')
+	);
+	await createProject(page, 'Report', 'Jumps');
+	await expect(previewStatus(page)).toContainText('Up to date');
+	const opened = (await (await opening).json()) as { jump: boolean };
+	expect(opened.jump, 'whether the server can trace pages to their source').toBe(jumps);
+	const locate = page.getByRole('button', { name: "Show the cursor's place on the pages" });
+
+	if (!jumps) {
+		// Nothing is offered that could not be answered.
+		await expect(locate).toHaveCount(0);
+		await expect(page.locator('.sheet.pickable')).toHaveCount(0);
+		return;
+	}
+
+	// From the source to the page: a sentence of the last chapter is on the last page.
+	await page.getByRole('button', { name: 'findings.typ', exact: true }).click();
+	await expect(page).toHaveURL(/file=chapters%2Ffindings\.typ/);
+	const sentence = page.locator('.cm-line', { hasText: 'Keep one idea per paragraph' });
+	await sentence.click();
+	await expect(locate).toBeVisible();
+	await page.keyboard.press('ControlOrMeta+j');
+	const mark = page.locator('.sheet .mark');
+	await expect(mark).toBeVisible();
+	await expect(page.locator('.sheet:has(.mark)')).toHaveAttribute('data-index', '3');
+	await expect(page.locator('.sheet:has(.mark)')).toBeInViewport();
+	// Where on its page the mark is, as fractions of the page.
+	const spot = await mark.evaluate((element: HTMLElement) => ({
+		x: parseFloat(element.style.left) / 100,
+		y: parseFloat(element.style.top) / 100
+	}));
+
+	// From the page to the source: a click on that very spot leads back to the sentence.
+	await page.getByRole('button', { name: 'template.typ', exact: true }).click();
+	await expect(page).toHaveURL(/file=template\.typ/);
+	await expect(mark).toHaveCount(0);
+	const sheet = (await page.locator('.sheet[data-index="3"]').boundingBox())!;
+	await page.mouse.click(sheet.x + spot.x * sheet.width + 3, sheet.y + spot.y * sheet.height - 2);
+	await expect(page).toHaveURL(/file=chapters%2Ffindings\.typ/);
+	await expect(page.locator('.cm-activeLine')).toContainText('Keep one idea per paragraph');
+
+	// An empty line prints nothing itself: the words before it are shown instead.
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+End');
+	await page.keyboard.type('\n\n');
+	await expect(mark).toHaveCount(0);
+	await locate.click();
+	await expect(mark).toBeVisible();
+	await expect(page.locator('.sheet:has(.mark)')).toHaveAttribute('data-index', '3');
+
+	// Where nothing nearby is printed either, that is said, instead of jumping somewhere.
+	await page.getByRole('button', { name: 'template.typ', exact: true }).click();
+	await expect(page).toHaveURL(/file=template\.typ/);
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('ControlOrMeta+Home');
+	await locate.click();
+	await expect(page.getByText('This place is not on a page')).toBeVisible();
 });

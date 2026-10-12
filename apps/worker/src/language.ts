@@ -35,6 +35,11 @@ import { packagePaths, syncTree } from './sync-tree.ts';
  * - decides the server's settings and project root itself;
  * - translates file addresses: the editor only ever sees `file:///project/…`,
  *   never where the copy lies on this machine, and cannot name a file outside.
+ *
+ * The server also knows which place in the source made which place on a page.
+ * It tells through its preview, which the worker starts on request and talks
+ * to in the editor's stead (see `locate` and `sourceAt`), so that the pages
+ * people see stay the compiler's own.
  */
 
 /** What a language server works on. */
@@ -75,6 +80,24 @@ export function parseLanguageRequest(body: unknown, limits: CompileLimits): Lang
 /** The server cannot take another editor right now, or is not installed. */
 export class LanguageUnavailableError extends Error {}
 
+/** A place on a rendered page: the page counted from 1, and a point on it in points. */
+export interface PagePosition {
+	page: number;
+	x: number;
+	y: number;
+}
+
+/** A place in a file, counted from 0. */
+export interface SourcePlace {
+	line: number;
+	character: number;
+}
+
+/** A place in the source: a project path and a place in that file. */
+export interface SourcePosition extends SourcePlace {
+	path: string;
+}
+
 /** Addresses the editor uses for the project and for packages. */
 export const PROJECT_URI = 'file:///project';
 const PACKAGES_URI = 'file:///packages';
@@ -89,6 +112,45 @@ const EVICT_AFTER_QUIET_MS = 120_000;
 /** A server whose editor stopped listening is given this long for it to come back. */
 const UNHEARD_GRACE_MS = 20_000;
 const SWEEP_INTERVAL_MS = 15_000;
+/** Name of the one preview a language server runs for the worker. */
+const PREVIEW_TASK = 'kernic';
+const JUMP_TIMEOUT_MS = 1_200;
+/**
+ * The preview answers a jump within tens of milliseconds, and not at all when
+ * the place asked for prints nothing. So the exact place is asked first, and
+ * places nearby only once it has had this long to answer.
+ */
+const JUMP_EXACT_MS = 120;
+/** Late answers to a jump are let pass for this long before the next jump is asked. */
+const JUMP_SETTLE_MS = 120;
+export const MAX_NEARBY_PLACES = 16;
+/**
+ * Points around a click on a page, nearest first, in points: between two lines,
+ * then left of it (the blank end of a line), right of it (the margin), and
+ * further up and down.
+ */
+const AROUND_A_CLICK: [number, number][] = [
+	[0, -3],
+	[0, 3],
+	[-8, 0],
+	[-20, 0],
+	[-45, 0],
+	[-90, 0],
+	[-180, 0],
+	[-320, 0],
+	[-480, 0],
+	[20, 0],
+	[50, 0],
+	[90, 0],
+	[0, -8],
+	[0, 8],
+	[0, -16],
+	[0, 16]
+];
+const PREVIEW_START_TIMEOUT_MS = 5_000;
+const PREVIEW_FIRST_DOCUMENT_MS = 2_500;
+/** The preview renders on every change of the document, so it only runs while jumps are asked for. */
+const PREVIEW_IDLE_MS = 120_000;
 
 /** What an editor may ask for. Everything else is refused without reaching the server. */
 const ALLOWED_REQUESTS = new Set([
@@ -197,8 +259,17 @@ class LanguageSession {
 	#listener: ((message: string | null) => void) | null = null;
 	#backlog: string[] = [];
 	#pending: Buffer = Buffer.alloc(0);
-	#pinRequests = 0;
 	#onExit: () => void;
+	/** Requests the worker itself made to the server, by id. */
+	#asked = new Map<string, (message: Message) => void>();
+	#askedCount = 0;
+	/** The connection to the server's preview, while there is one. */
+	#preview: { socket: WebSocket; lastUsed: number } | null = null;
+	#previewStarting: Promise<WebSocket> | null = null;
+	/** Whoever is waiting for the answer to a jump. Answers carry no name, so jumps take turns. */
+	#awaitingPage: ((positions: PagePosition[]) => void) | null = null;
+	#awaitingSource: ((position: SourcePosition | null) => void) | null = null;
+	#jumpTurn: Promise<unknown> = Promise.resolve();
 
 	constructor(name: string, options: Options, onExit: () => void) {
 		this.name = name;
@@ -217,6 +288,107 @@ class LanguageSession {
 
 	get exited(): boolean {
 		return this.#exited;
+	}
+
+	/**
+	 * Whether jumps between page and source can be offered. The preview listens
+	 * on a local port, which the worker cannot reach where the server runs in a
+	 * network of its own (bubblewrap).
+	 */
+	get canJump(): boolean {
+		return this.#options.sandbox !== 'bwrap';
+	}
+
+	/**
+	 * Where on the rendered pages the given place in the source ends up; empty if
+	 * nowhere. A place that prints nothing itself (the start of a line, a label, a
+	 * function call) has no place on a page; then the first of `nearby` that has
+	 * one answers instead.
+	 */
+	async locate(position: SourcePosition, nearby: SourcePlace[] = []): Promise<PagePosition[]> {
+		this.lastHeard = Date.now();
+		await this.#openPreview();
+		return this.#inTurn(async () => {
+			const answer = new Promise<PagePosition[]>((resolve) => {
+				this.#awaitingPage = resolve;
+				setTimeout(() => {
+					if (this.#awaitingPage !== resolve) return;
+					this.#awaitingPage = null;
+					resolve([]);
+				}, JUMP_TIMEOUT_MS).unref();
+			});
+			this.#scrollPreviewTo(position.path, position);
+			if (nearby.length > 0 && !(await answeredWithin(answer, JUMP_EXACT_MS))) {
+				// The preview answers in the order asked, so the nearest place that prints wins.
+				for (const place of nearby) this.#scrollPreviewTo(position.path, place);
+			}
+			return answer;
+		});
+	}
+
+	#scrollPreviewTo(file: string, place: SourcePlace): void {
+		const view = languageView(this.#options.sandbox, this.#paths);
+		void this.#ask('workspace/executeCommand', {
+			command: 'tinymist.scrollPreview',
+			arguments: [
+				PREVIEW_TASK,
+				{
+					event: 'panelScrollTo',
+					filepath: path.join(view.sourceDir, file),
+					line: place.line,
+					character: place.character
+				}
+			]
+		});
+	}
+
+	/**
+	 * Which place in the source made what is at a point of a page. A click beside
+	 * the text (after the end of a line, between two lines, in the margin) is
+	 * answered by what is nearest; null if nothing is near.
+	 */
+	async sourceAt(position: PagePosition): Promise<SourcePosition | null> {
+		this.lastHeard = Date.now();
+		const socket = await this.#openPreview();
+		return this.#inTurn(async () => {
+			const answer = new Promise<SourcePosition | null>((resolve) => {
+				this.#awaitingSource = resolve;
+				setTimeout(() => {
+					if (this.#awaitingSource !== resolve) return;
+					this.#awaitingSource = null;
+					resolve(null);
+				}, JUMP_TIMEOUT_MS).unref();
+			});
+			const ask = (x: number, y: number) => {
+				if (socket.readyState !== WebSocket.OPEN) return;
+				socket.send(`src-point ${JSON.stringify({ page_no: position.page, x, y })}`);
+			};
+			ask(position.x, position.y);
+			if (!(await answeredWithin(answer, JUMP_EXACT_MS))) {
+				for (const [dx, dy] of AROUND_A_CLICK) {
+					ask(Math.max(0, position.x + dx), Math.max(0, position.y + dy));
+				}
+			}
+			return answer;
+		});
+	}
+
+	/**
+	 * Runs one jump after the other. The preview's answers do not say which
+	 * question they belong to, so a jump waits until the answers to the one
+	 * before it have passed.
+	 */
+	#inTurn<T>(jump: () => Promise<T>): Promise<T> {
+		const result = this.#jumpTurn.then(jump);
+		this.#jumpTurn = result
+			.catch(() => undefined)
+			.then(() => new Promise((resolve) => setTimeout(resolve, JUMP_SETTLE_MS).unref()));
+		return result;
+	}
+
+	/** Stops the preview once no jump has been asked for in a while. */
+	closeIdlePreview(now: number): void {
+		if (this.#preview && now - this.#preview.lastUsed > PREVIEW_IDLE_MS) this.#closePreview();
 	}
 
 	async start(request: LanguageRequest): Promise<void> {
@@ -355,18 +527,166 @@ class LanguageSession {
 			await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 2_000))]);
 		}
 		this.#exited = true;
+		this.#preview?.socket.close();
+		this.#preview = null;
 		this.#listener?.(null);
 		this.#listener = null;
 		await rm(this.#dir, { recursive: true, force: true });
 	}
 
+	/** Asks the server something on the worker's own behalf. Resolves with its answer. */
+	#ask(method: string, params: unknown): Promise<Message> {
+		const id = `kernic-${++this.#askedCount}`;
+		const answer = new Promise<Message>((resolve) => {
+			this.#asked.set(id, resolve);
+			setTimeout(() => {
+				if (this.#asked.delete(id)) resolve({ error: { message: 'no answer' } });
+			}, PREVIEW_START_TIMEOUT_MS).unref();
+		});
+		this.#write({ jsonrpc: '2.0', id, method, params });
+		return answer;
+	}
+
+	/** Starts the server's preview if it is not running, and connects to it. */
+	#openPreview(): Promise<WebSocket> {
+		if (!this.canJump || this.#exited) {
+			return Promise.reject(new LanguageUnavailableError('Jumps are not available here.'));
+		}
+		if (this.#preview) {
+			this.#preview.lastUsed = Date.now();
+			return Promise.resolve(this.#preview.socket);
+		}
+		this.#previewStarting ??= this.#startPreview().finally(() => (this.#previewStarting = null));
+		return this.#previewStarting;
+	}
+
+	async #startPreview(): Promise<WebSocket> {
+		const view = languageView(this.#options.sandbox, this.#paths);
+		const started = await this.#ask('workspace/executeCommand', {
+			command: 'tinymist.doStartPreview',
+			arguments: [
+				[
+					'--task-id',
+					PREVIEW_TASK,
+					// Any free port, on this machine only.
+					'--data-plane-host',
+					'127.0.0.1:0',
+					'--no-open',
+					'--partial-rendering',
+					'true',
+					path.join(view.sourceDir, this.#entry)
+				]
+			]
+		});
+		const port = (started.result as { dataPlanePort?: unknown } | undefined)?.dataPlanePort;
+		if (typeof port !== 'number') {
+			throw new LanguageUnavailableError('The preview for jumps could not be started.');
+		}
+
+		const address = `127.0.0.1:${port}`;
+		// The preview expects the Origin a page it served itself would send.
+		const socket = new WebSocket(`ws://${address}/`, {
+			headers: { origin: `http://${address}` }
+		} as never);
+		socket.binaryType = 'arraybuffer';
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new LanguageUnavailableError('The preview for jumps did not answer.')),
+				PREVIEW_START_TIMEOUT_MS
+			);
+			socket.onopen = () => {
+				clearTimeout(timer);
+				resolve();
+			};
+			socket.onerror = () => {
+				clearTimeout(timer);
+				reject(new LanguageUnavailableError('The preview for jumps could not be reached.'));
+			};
+		});
+		socket.onerror = null;
+		socket.onclose = () => {
+			if (this.#preview?.socket === socket) this.#preview = null;
+		};
+		// Its first message is the document it compiled; before that it can answer nothing.
+		// A document with errors never comes, so this is not waited for at any length.
+		await new Promise<void>((resolve) => {
+			socket.onmessage = () => resolve();
+			setTimeout(resolve, PREVIEW_FIRST_DOCUMENT_MS).unref();
+		});
+		socket.onmessage = (event) => this.#fromPreview(event.data);
+		this.#preview = { socket, lastUsed: Date.now() };
+		return socket;
+	}
+
+	#closePreview(): void {
+		this.#preview?.socket.close();
+		this.#preview = null;
+		void this.#ask('workspace/executeCommand', {
+			command: 'tinymist.doKillPreview',
+			arguments: [PREVIEW_TASK]
+		});
+	}
+
+	/**
+	 * A message of the preview. Most are renderings for a page view the worker
+	 * does not have; the one of interest says where a place in the source is.
+	 */
+	#fromPreview(data: unknown): void {
+		const head =
+			typeof data === 'string'
+				? data.slice(0, 512)
+				: Buffer.from(
+						data as ArrayBuffer,
+						0,
+						Math.min((data as ArrayBuffer).byteLength, 512)
+					).toString('latin1');
+		if (!head.startsWith('jump,')) return;
+		const positions = head
+			.slice('jump,'.length)
+			.split(',')
+			.map((part) => part.trim().split(' ').map(Number))
+			.filter((numbers) => numbers.length === 3 && numbers.every(Number.isFinite))
+			.map(([page, x, y]) => ({ page: page!, x: x!, y: y! }));
+		this.#awaitingPage?.(positions);
+		this.#awaitingPage = null;
+	}
+
+	/**
+	 * The server asks to show a place in the source: its answer to "what is at
+	 * this point of the page". Answered here; it is not the editor's to handle.
+	 */
+	#showDocument(message: Message): void {
+		this.#write({ jsonrpc: '2.0', id: message.id, result: { success: true } });
+		const params = message.params as
+			| { uri?: unknown; selection?: { start?: { line?: unknown; character?: unknown } } }
+			| undefined;
+		const uri = typeof params?.uri === 'string' ? this.#outward(params.uri) : '';
+		const start = params?.selection?.start;
+		let found: SourcePosition | null = null;
+		if (
+			uri.startsWith(`${PROJECT_URI}/`) &&
+			typeof start?.line === 'number' &&
+			typeof start.character === 'number'
+		) {
+			try {
+				found = {
+					path: decodeURIComponent(uri.slice(PROJECT_URI.length + 1)),
+					line: start.line,
+					character: start.character
+				};
+			} catch {
+				// not an address of a project file
+			}
+		}
+		this.#awaitingSource?.(found);
+		this.#awaitingSource = null;
+	}
+
 	#pinMain(): void {
 		const view = languageView(this.#options.sandbox, this.#paths);
-		this.#write({
-			jsonrpc: '2.0',
-			id: `kernic-pin-${++this.#pinRequests}`,
-			method: 'workspace/executeCommand',
-			params: { command: 'tinymist.pinMain', arguments: [path.join(view.sourceDir, this.#entry)] }
+		void this.#ask('workspace/executeCommand', {
+			command: 'tinymist.pinMain',
+			arguments: [path.join(view.sourceDir, this.#entry)]
 		});
 	}
 
@@ -417,7 +737,25 @@ class LanguageSession {
 				continue;
 			}
 			// Answers to what the worker asked itself are not for the editor.
-			if (typeof message.id === 'string' && message.id.startsWith('kernic-pin-')) continue;
+			if (typeof message.id === 'string' && message.method === undefined) {
+				const asked = this.#asked.get(message.id);
+				if (asked) {
+					this.#asked.delete(message.id);
+					asked(message);
+					continue;
+				}
+			}
+			// Nor is what the server says about its preview, which the editor never sees.
+			if (message.method === 'window/showDocument') {
+				this.#showDocument(message);
+				continue;
+			}
+			if (
+				typeof message.method === 'string' &&
+				/^tinymist\/(preview\/|documentOutline$)/.test(message.method)
+			) {
+				continue;
+			}
 			this.#deliver(
 				JSON.stringify(
 					translateUris(
@@ -547,6 +885,29 @@ export class LanguageSessions {
 		return true;
 	}
 
+	/** Whether jumps between page and source can be offered on this worker. */
+	get canJump(): boolean {
+		return this.available && this.#options.sandbox !== 'bwrap';
+	}
+
+	/** Where on the pages a place in the source is. Null if there is no such language server. */
+	async locate(
+		name: string,
+		position: SourcePosition,
+		nearby: SourcePlace[] = []
+	): Promise<PagePosition[] | null> {
+		const session = this.#sessions.get(name);
+		if (!session || session.exited) return null;
+		return session.locate(position, nearby);
+	}
+
+	/** Which place in the source is at a point of a page. `undefined` if there is no such server. */
+	async sourceAt(name: string, position: PagePosition): Promise<SourcePosition | null | undefined> {
+		const session = this.#sessions.get(name);
+		if (!session || session.exited) return undefined;
+		return session.sourceAt(position);
+	}
+
 	listen(name: string, listener: (message: string | null) => void): (() => void) | null {
 		const session = this.#sessions.get(name);
 		if (!session || session.exited) return null;
@@ -571,6 +932,7 @@ export class LanguageSessions {
 	async #stopUnused(): Promise<void> {
 		const now = Date.now();
 		for (const session of this.#sessions.values()) {
+			session.closeIdlePreview(now);
 			const idle = now - session.lastHeard > this.#options.language.idleMs;
 			const unheard =
 				session.unheardSince !== null && now - session.unheardSince > UNHEARD_GRACE_MS;
@@ -584,6 +946,14 @@ export class LanguageSessions {
 			.dispose()
 			.catch((error) => console.error('could not stop a language server', error));
 	}
+}
+
+/** Whether a promise settled within the given time. */
+function answeredWithin(answer: Promise<unknown>, ms: number): Promise<boolean> {
+	return Promise.race([
+		answer.then(() => true),
+		new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms).unref())
+	]);
 }
 
 export { MAX_MESSAGE_BYTES };

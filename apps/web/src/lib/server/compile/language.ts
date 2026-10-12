@@ -3,9 +3,14 @@ import { projectTreeDir } from '../config';
 import { snapshotWithPackages } from './compile-project';
 import {
 	languageServerStream,
+	locateInPages,
 	sendToLanguageServer,
+	sourceOfPoint,
 	startLanguageServer,
-	stopLanguageServer
+	stopLanguageServer,
+	type PagePosition,
+	type SourcePlace,
+	type SourcePosition
 } from './worker-client';
 
 /**
@@ -31,10 +36,10 @@ const MAX_MESSAGES_PER_REQUEST = 256;
 
 const connections = new Map<string, Connection>();
 
-async function syncProject(connection: Connection, entryPath: string): Promise<void> {
+async function syncProject(connection: Connection, entryPath: string): Promise<{ jump: boolean }> {
 	const root = projectTreeDir(connection.projectId);
 	const { snapshot, packages } = await snapshotWithPackages(root);
-	await startLanguageServer({
+	return startLanguageServer({
 		name: connection.id,
 		entry: entryPath,
 		root,
@@ -51,7 +56,7 @@ export async function openLanguageConnection(input: {
 	userId: string;
 	projectId: string;
 	entryPath: string;
-}): Promise<string> {
+}): Promise<{ id: string; jump: boolean }> {
 	const mine = [...connections.values()]
 		.filter((connection) => connection.userId === input.userId)
 		.sort((a, b) => a.openedAt - b.openedAt);
@@ -64,9 +69,9 @@ export async function openLanguageConnection(input: {
 		projectId: input.projectId,
 		openedAt: Date.now()
 	};
-	await syncProject(connection, input.entryPath);
+	const { jump } = await syncProject(connection, input.entryPath);
 	connections.set(connection.id, connection);
-	return connection.id;
+	return { id: connection.id, jump };
 }
 
 /** The connection, if it belongs to this person and project. */
@@ -152,6 +157,17 @@ export async function languageEvents(
 		}
 	});
 }
+
+/** Where on the rendered pages a place in the source is. */
+export const locatePlace = (
+	connection: Connection,
+	position: SourcePosition,
+	nearby: SourcePlace[] = []
+) => locateInPages(connection.id, position, nearby);
+
+/** Which place in the source is at a point of a page. */
+export const sourceOfPlace = (connection: Connection, position: PagePosition) =>
+	sourceOfPoint(connection.id, position);
 
 export async function closeLanguageConnection(connection: Connection): Promise<void> {
 	connections.delete(connection.id);

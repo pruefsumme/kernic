@@ -124,7 +124,9 @@ class Editor {
 	async start(files: Files, options: { entry?: string; packages?: PackageSource[] } = {}) {
 		const started = await this.project(files, options);
 		assert.equal(started.status, 200, await started.clone().text());
-		assert.deepEqual(await started.json(), { ok: true, rootUri: 'file:///project' });
+		const answer = (await started.json()) as { ok: boolean; rootUri: string };
+		assert.equal(answer.ok, true);
+		assert.equal(answer.rootUri, 'file:///project');
 		await this.listen();
 		const initialized = await this.request('initialize', {
 			processId: 4242,
@@ -373,6 +375,151 @@ for (const { mode, available } of sandboxes) {
 					.flatMap((message) => message.params.diagnostics as { message: string }[]);
 				assert.ok(diagnostics.length > 0, 'reading outside the project is an error');
 				assert.ok(!editor.transcript.includes(hostname) || hostname.length < 3);
+			} finally {
+				editor.close();
+				await harness.close();
+			}
+		});
+
+		test('tells which place on a page belongs to which place in the source', async (t) => {
+			const harness = await start();
+			const editor = new Editor(harness, 'editor-jump');
+			const ask = async (what: 'locate' | 'source', body: object) => {
+				const response = await fetch(`${harness.baseUrl}/lsp/editor-jump/${what}`, {
+					method: 'POST',
+					headers: { ...auth, 'content-type': 'application/json' },
+					body: JSON.stringify(body)
+				});
+				return { status: response.status, body: (await response.json()) as any };
+			};
+			try {
+				const files = {
+					'main.typ':
+						'#include "chapters/intro.typ"\n\n= Results\nValues.\n\n#pagebreak()\n= Second page\nMore.\n',
+					'chapters/intro.typ': '= Introduction\nIntro text here.\n'
+				};
+				const started = await editor.project(files);
+				const { jump } = (await started.json()) as { jump: boolean };
+				// The preview that answers this listens on a local port, out of the worker's
+				// reach where the server has a network of its own.
+				assert.equal(jump, mode !== 'bwrap');
+				await editor.listen();
+				await editor.request('initialize', { processId: null, capabilities: {} });
+				await editor.notify('initialized', {});
+				await editor.open('main.typ', files['main.typ']);
+
+				if (!jump) {
+					assert.equal(
+						(await ask('locate', { path: 'main.typ', line: 6, character: 3 })).status,
+						503
+					);
+					t.diagnostic('jumps are not offered in this sandbox mode');
+					return;
+				}
+
+				// Source → page: the heading after the page break is on page 2, near its top.
+				let located = await ask('locate', { path: 'main.typ', line: 6, character: 3 });
+				for (let attempt = 0; attempt < 20 && located.body.positions.length === 0; attempt++) {
+					await new Promise((resolve) => setTimeout(resolve, 150));
+					located = await ask('locate', { path: 'main.typ', line: 6, character: 3 });
+				}
+				assert.equal(located.status, 200);
+				const [second] = located.body.positions;
+				assert.equal(second.page, 2);
+				assert.ok(second.y > 40 && second.y < 140, `y = ${second.y}`);
+
+				// A place in an included file is found on the page the main file puts it on.
+				const inChapter = await ask('locate', {
+					path: 'chapters/intro.typ',
+					line: 1,
+					character: 2
+				});
+				assert.equal(inChapter.body.positions[0].page, 1);
+
+				// Page → source: that very point leads back to the line of the heading …
+				const back = await ask('source', { page: 2, x: second.x + 20, y: second.y });
+				assert.deepEqual(
+					{ path: back.body.source.path, line: back.body.source.line },
+					{ path: 'main.typ', line: 6 }
+				);
+				// … a point in the first heading leads into the included file …
+				const first = await ask('source', { page: 1, x: 90, y: 80 });
+				assert.equal(first.body.source.path, 'chapters/intro.typ');
+				// … and where nothing is printed, there is nothing to find.
+				assert.equal((await ask('source', { page: 2, x: 300, y: 700 })).body.source, null);
+				assert.equal((await ask('source', { page: 99, x: 10, y: 10 })).body.source, null);
+
+				// A place that prints nothing itself has no place on a page …
+				const lineStart = { path: 'main.typ', line: 6, character: 0 };
+				assert.deepEqual((await ask('locate', lineStart)).body.positions, []);
+				// … so the first place nearby that has one answers: not the label-less start
+				// of the line, not the heading of page 1 further away, but the heading's text.
+				const nearby = await ask('locate', {
+					...lineStart,
+					nearby: [
+						{ line: 5, character: 0 },
+						{ line: 6, character: 3 },
+						{ line: 2, character: 3 }
+					]
+				});
+				assert.equal(nearby.body.positions[0].page, 2);
+				assert.ok(Math.abs(nearby.body.positions[0].y - second.y) < 1);
+				assert.equal(
+					(
+						await ask('locate', {
+							...lineStart,
+							nearby: Array.from({ length: 17 }, () => ({ line: 6, character: 3 }))
+						})
+					).status,
+					400
+				);
+				assert.equal((await ask('locate', { ...lineStart, nearby: [{ line: 'x' }] })).status, 400);
+
+				// A click past the end of a line, or just under it, means that line.
+				for (const [dx, dy] of [
+					[250, 0],
+					[20, 2]
+				] as const) {
+					const beside = await ask('source', { page: 2, x: second.x + dx, y: second.y + dy });
+					assert.deepEqual(
+						{ path: beside.body.source?.path, line: beside.body.source?.line },
+						{ path: 'main.typ', line: 6 },
+						`a click ${dx} pt right of and ${dy} pt below the heading`
+					);
+				}
+
+				// Questions asked at the same moment each get their own answer.
+				const together = await Promise.all([
+					ask('locate', { path: 'main.typ', line: 6, character: 3 }),
+					ask('locate', { path: 'chapters/intro.typ', line: 1, character: 2 }),
+					ask('source', { page: 1, x: 90, y: 80 }),
+					ask('locate', { ...lineStart, nearby: [{ line: 6, character: 3 }] }),
+					ask('source', { page: 2, x: second.x + 20, y: second.y }),
+					ask('locate', { path: 'chapters/intro.typ', line: 1, character: 2 })
+				]);
+				assert.deepEqual(
+					together.map(({ body }) => body.positions?.[0]?.page ?? body.source?.path),
+					[2, 1, 'chapters/intro.typ', 2, 'main.typ', 1]
+				);
+
+				// None of it reaches the editor, and nothing names the worker's directories.
+				assert.equal(
+					editor.received.filter((message) =>
+						/showDocument|preview|documentOutline/.test(message.method ?? '')
+					).length,
+					0
+				);
+				assert.doesNotMatch(
+					JSON.stringify([located.body, back.body, first.body]),
+					/kernic-worker-test|\/language\//
+				);
+
+				// Requests that are not a place are refused.
+				assert.equal(
+					(await ask('locate', { path: '../x.typ', line: 0, character: 0 })).status,
+					400
+				);
+				assert.equal((await ask('source', { page: 'one', x: 0, y: 0 })).status, 400);
 			} finally {
 				editor.close();
 				await harness.close();

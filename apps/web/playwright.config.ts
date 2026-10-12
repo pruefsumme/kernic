@@ -10,6 +10,7 @@ import {
 	setupToken,
 	workerDir,
 	workerPort,
+	workerSandbox,
 	workerToken
 } from './e2e/environment.ts';
 
@@ -55,7 +56,8 @@ export default defineConfig({
 					env: {
 						KERNIC_WORKER_PORT: String(workerPort),
 						KERNIC_WORKER_TOKEN: workerToken,
-						KERNIC_WORKER_DIR: workerDir
+						KERNIC_WORKER_DIR: workerDir,
+						KERNIC_WORKER_SANDBOX: workerSandbox
 					}
 				},
 				{

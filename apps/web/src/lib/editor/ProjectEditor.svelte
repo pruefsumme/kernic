@@ -19,6 +19,7 @@
 	import FormatToolbar from './FormatToolbar.svelte';
 	import HistoryPanel from './HistoryPanel.svelte';
 	import IssuesPanel from './IssuesPanel.svelte';
+	import { placesNearby } from './jump.ts';
 	import OutlinePanel from './OutlinePanel.svelte';
 	import PreviewPane from './PreviewPane.svelte';
 	import SearchPanel from './SearchPanel.svelte';
@@ -79,6 +80,73 @@
 		void session.revision;
 		untrack(() => assistance.projectChanged());
 	});
+
+	let preview = $state<PreviewPane>();
+	/** A short remark after a jump that led nowhere; it clears itself. */
+	let jumpNote = $state<string | null>(null);
+	let jumpNoteTimer: ReturnType<typeof setTimeout> | undefined;
+	function remark(text: string) {
+		jumpNote = text;
+		clearTimeout(jumpNoteTimer);
+		jumpNoteTimer = setTimeout(() => (jumpNote = null), 3500);
+	}
+
+	/** A click on a page: opens the place in the source that produced what is there. */
+	async function goToSource(page: number, x: number, y: number) {
+		const source = await assistance.sourceOf(page, x, y);
+		if (!source) {
+			remark('Nothing to go to at that spot');
+			return;
+		}
+		jumpNote = null;
+		await reveal(source.path, source.line + 1, source.character);
+	}
+
+	/** The place last shown in the preview, to go on to its next appearance when asked again. */
+	let located: { key: string; index: number } | null = null;
+	/** One question at a time: a key held down asks once. */
+	let locating = false;
+
+	/**
+	 * Scrolls the preview to where the cursor's place in the source is printed.
+	 * A heading is also printed in the table of contents, a caption in a list of
+	 * figures: the appearance nearest to what the preview shows comes first, and
+	 * asking again for the same place goes on to the next.
+	 */
+	async function showInPreview() {
+		if (!file || !cursor || locating) return;
+		locating = true;
+		try {
+			await locate(file.path, cursor);
+		} finally {
+			locating = false;
+		}
+	}
+
+	async function locate(path: string, cursor: { line: number; column: number }) {
+		const key = `${path}:${cursor.line}:${cursor.column}`;
+		const at = { line: cursor.line - 1, character: cursor.column - 1 };
+		const text = view?.state.doc;
+		const lineAt = (line: number) => (text && line < text.lines ? text.line(line + 1).text : '');
+		const places = await assistance.pageOf(path, at, placesNearby(lineAt, at));
+		if (places.length === 0 || !preview) {
+			located = null;
+			remark('This place is not on a page');
+			return;
+		}
+		pane = 'preview';
+		await tick();
+		const index =
+			located?.key === key ? (located.index + 1) % places.length : preview.nearest(places);
+		located = { key, index };
+		const place = places[index]!;
+		preview.show(place.page, place.x, place.y);
+		if (places.length > 1) {
+			remark(`Place ${index + 1} of ${places.length} · press again for the next`);
+		} else {
+			jumpNote = null;
+		}
+	}
 
 	const isImage = $derived(file?.kind === 'binary' && file.contentType.startsWith('image/'));
 
@@ -428,6 +496,17 @@
 							icon: 'code',
 							run: () => void renameSymbol(editor)
 						},
+						...(assistance.canJump
+							? [
+									{
+										id: 'locate',
+										label: 'Show the place of the cursor in the preview',
+										kind: 'Action',
+										icon: 'locate' as const,
+										run: () => void showInPreview()
+									}
+								]
+							: []),
 						{
 							id: 'definition',
 							label: 'Go to the definition of the symbol at the cursor',
@@ -457,6 +536,16 @@
 		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
 			event.preventDefault();
 			void session.save();
+		}
+		if (
+			(event.ctrlKey || event.metaKey) &&
+			!event.shiftKey &&
+			event.key.toLowerCase() === 'j' &&
+			assisted &&
+			assistance.canJump
+		) {
+			event.preventDefault();
+			void showInPreview();
 		}
 		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
 			event.preventDefault();
@@ -599,9 +688,11 @@
 			</div>
 		{/if}
 		{#if session.uploading > 0}
-			<p class="uploading" role="status">
+			<p class="pill" role="status">
 				Uploading {session.uploading === 1 ? '1 file' : `${session.uploading} files`}…
 			</p>
+		{:else if jumpNote}
+			<p class="pill" role="status">{jumpNote}</p>
 		{/if}
 
 		{#if session.exportError}
@@ -743,7 +834,13 @@
 			></div>
 
 			<div class="preview">
-				<PreviewPane {session} onshowissues={() => (openPanel = 'issues')} />
+				<PreviewPane
+					bind:this={preview}
+					{session}
+					onshowissues={() => (openPanel = 'issues')}
+					onpick={assistance.canJump ? goToSource : null}
+					onlocate={assisted && assistance.canJump ? () => void showInPreview() : null}
+				/>
 			</div>
 		</div>
 	</div>
@@ -847,7 +944,7 @@
 		font-size: var(--t-ui);
 	}
 
-	.uploading {
+	.pill {
 		position: absolute;
 		z-index: 6;
 		bottom: var(--s-4);
