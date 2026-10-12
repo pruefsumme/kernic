@@ -107,7 +107,22 @@ what follows is polish, to be done when people ask for it:
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 7. Operations
+### 7. Backups: what is left
+
+Local and off-site backups, restore, checks and monitoring are in place (see "Done"). Left, when
+they are asked for:
+
+- Trying the destinations that cost an account: a real Backblaze B2 bucket and Hetzner Storage Box
+  (including the SSH key and `known_hosts` handling, which the pipeline does not exercise), and
+  Google Drive with a published consent screen over more than a week (its login must not expire).
+  Dropbox, OneDrive and Nextcloud are untried.
+- A "last backup" line for administrators in the app (the backup job would write a small status
+  file the app reads; the activity log lives in the database that is restored, so it cannot hold it).
+- Backups without stopping the app: a maintenance mode, or a filesystem snapshot (LVM, btrfs, ZFS).
+- A repository that the server may only add to; a published image of the backup job.
+- Encrypting the dated folders on the machine itself.
+
+### 8. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -138,6 +153,10 @@ details.
 - ZIP import with a dry-run check (`8a3fe41`).
 - Docker Compose deployment (proxy, app, isolated worker, PostgreSQL) with self-hosting guide,
   backup and restore scripts and a tested restore.
+- Backups: a lock, a manifest, checks, retention, a restore that saves the previous state first;
+  sending them encrypted to a disk, an S3 service, an SSH server or anything rclone reaches, with
+  snapshots kept by day, week and month, a verification of the repository and monitoring pings;
+  all tried by the pipeline against a disk, rclone and an S3 server.
 - Typst Universe packages, fetched by the app and passed to the worker; transitive dependencies;
   specific error messages for missing and private packages.
 - Version history: checkpoints as Git commits per project, diff, restore, ZIP of a version;

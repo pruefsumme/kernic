@@ -16,3 +16,5 @@ Thumbs.db
 /deploy/.env
 /deploy/backups/
 /deploy/.backup.lock/
+/deploy/backup-config/
+/deploy/compose.override.yaml

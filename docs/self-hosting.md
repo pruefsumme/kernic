@@ -328,6 +328,9 @@ label (`./backup.sh --label before-the-viva`) never are.
 - The backup itself, on another machine: a backup on the same disk does not survive losing the
   disk, and neither does one on the same server survive losing the server.
 
+To send backups off the machine, encrypted, to cloud storage, another server or another disk,
+and to have them checked: see **[backups.md](backups.md)**.
+
 Run it on a schedule, for example nightly with cron, and look at the log now and then:
 
 ```cron
@@ -410,7 +413,9 @@ What the deployment does, and what it relies on you for.
 - **Packages.** Only the app talks to the package registry. A package's code runs inside the
   same sandbox as the document that imports it.
 - **Network.** Only the proxy publishes ports. The database and the worker are not reachable from
-  outside the Compose networks.
+  outside the Compose networks. The one other container with a way out is the backup job, and
+  only while it sends a backup (see [backups.md](backups.md)): it has no database access and sees
+  a finished copy of the backup, read-only.
 - **Sessions.** Sign-in cookies are `HttpOnly` and `SameSite=Lax`, and marked `Secure` when Kernic
   is served over HTTPS. Requests that change data must come from Kernic's own origin.
 - **Accounts.** There is no public sign-up; people are invited by link. Passwords are stored as

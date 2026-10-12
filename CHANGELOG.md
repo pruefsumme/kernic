@@ -11,11 +11,28 @@
   current state first (`pre-restore`) and says how to go back if it stops halfway.
 - The pipeline backs up, damages and restores a running installation on every change.
 
+**Backups off the machine** ([docs/backups.md](docs/backups.md))
+- After each backup, the folder can be sent, encrypted and deduplicated, to a repository: an S3
+  API (Backblaze B2, Cloudflare R2, Wasabi, Amazon S3), a server over SSH (a Hetzner Storage Box),
+  anything rclone reaches (Google Drive, Dropbox, OneDrive, Nextcloud, ...) or another disk. It
+  runs in a separate container (`backup` in `compose.yaml`) that sees a finished copy read-only and
+  has no database access; the app is not stopped for the upload. Snapshots are kept by day, week
+  and month (`KERNIC_BACKUP_KEEP_*`), and a monitor can be pinged (`KERNIC_BACKUP_PING_URL`).
+- `restore.sh --from-repo` brings a snapshot back, on the same machine or a new one;
+  `verify-backup.sh` checks a backup or the repository (`--from-repo --full` restores the
+  database into a scratch database); `backup-tool.sh` runs restic and rclone with the settings;
+  systemd units for a nightly backup and a weekly check are in `deploy/systemd/`.
+- The pipeline sends backups to a disk, through rclone and to an S3 server and restores from each.
+  Not tested against the real services, nor with SSH.
+
 **Upgrade notes**
 - The backup folder holds `projects.tar` (not compressed) instead of `projects.tar.gz`, and is
   bigger as a result. Backups of the older kind can still be restored.
 - `backup.sh` now removes dated folders beyond the newest 7 in the backup directory it is given.
   Set `KERNIC_BACKUP_KEEP_LOCAL=0` in `deploy/.env` to keep everything as before.
+- `compose.yaml` has a new service (`backup`, started only for an upload) and a new network
+  (`egress`): update `deploy/` along with the images. Nothing changes until
+  `KERNIC_BACKUP_REPOSITORY` is set.
 
 ## 0.1.0
 
