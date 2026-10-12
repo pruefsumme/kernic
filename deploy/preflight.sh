@@ -52,6 +52,10 @@ if command -v docker >/dev/null 2>&1; then
 	fi
 fi
 
+for tool in tar sha256sum; do
+	command -v "$tool" >/dev/null 2>&1 || fail "$tool is not installed; backup.sh and restore.sh need it"
+done
+
 echo "deploy/.env"
 if [ ! -f .env ]; then
 	fail ".env is missing: cp .env.example .env, then edit it"

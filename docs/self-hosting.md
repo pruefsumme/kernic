@@ -294,24 +294,41 @@ Two things hold your data, and a backup needs both:
 - the **database** (accounts, project list, settings), and
 - the **`kernic-data` volume** (the files of every project and their version history).
 
-If you use Git repositories (see above), also keep `KERNIC_SECRET_KEY` from `deploy/.env`
-somewhere safe: the access tokens in the database can only be read with it.
-
-`deploy/backup.sh` saves both. It stops the app for a few seconds so that the two are captured at
-the same moment, and starts it again:
+`deploy/backup.sh` saves both. It stops the app while it copies them, so that the two are of
+the same moment (usually well under a minute), and starts it again, whatever happens:
 
 ```sh
 cd deploy
 ./backup.sh /path/to/backups
 ```
 
-Each run creates a dated folder with `database.dump` and `projects.tar.gz` (project files
-including all checkpoints). Rendered preview pages
-are not included; they are produced again when a project is opened. Copy the folder to another
-machine: a backup on the same disk does not survive losing the disk. Also keep a copy of
-`deploy/.env`.
+Each run makes a dated folder, such as `20261012-031500`, with:
 
-Run it on a schedule, for example nightly with cron:
+| File | What it is |
+| --- | --- |
+| `database.dump` | the database |
+| `projects.tar` | the project files with all their checkpoints |
+| `manifest.txt` | what made it: Kernic's version, the database migrations, checksums, sizes |
+
+The folder only gets its name once it is complete and has been checked (the dump is read back
+and the archive listed); a run that fails leaves nothing behind, and the exit status says so.
+Only one backup or restore runs at a time; a second one is refused (exit status 4). The files
+are readable only by their owner. Rendered preview pages, unfinished imports and downloaded
+packages are not included: they are made again when they are needed.
+
+The oldest dated folders are removed beyond `KERNIC_BACKUP_KEEP_LOCAL` (default 7; 0 keeps
+everything). Only folders named like these, holding a backup, are ever removed, and folders you
+label (`./backup.sh --label before-the-viva`) never are.
+
+**Two things are not in a backup and must be kept elsewhere:**
+
+- `deploy/.env`. It holds `KERNIC_SECRET_KEY`: the access tokens people entered for their Git
+  repositories (see above) can only be read with it. Without it, projects have to be
+  connected to their repositories again; nothing else depends on it.
+- The backup itself, on another machine: a backup on the same disk does not survive losing the
+  disk, and neither does one on the same server survive losing the server.
+
+Run it on a schedule, for example nightly with cron, and look at the log now and then:
 
 ```cron
 15 3 * * * cd /srv/kernic/deploy && ./backup.sh /srv/backups/kernic >> /var/log/kernic-backup.log 2>&1
@@ -330,12 +347,21 @@ docker compose up -d --build      # on a new machine: install first, do not run 
 ./restore.sh /path/to/backups/20261011-220800
 ```
 
-It asks for confirmation, restores the database and the project files, and starts Kernic. People
-sign in with the accounts and passwords from the backup.
+It checks the backup against its manifest first (the checksums, and that this installation knows
+every database migration the backup has: a backup made by a newer Kernic is refused with the
+version to install), asks for confirmation, **saves what is there now** as a backup labelled
+`pre-restore` in `deploy/backups`, restores the database and the project files, and starts Kernic.
+People sign in with the accounts and passwords from the backup. If it stops halfway, run it
+again: a restore can be repeated, and the message says where the copy of the previous state is.
+`--no-safety-backup` skips the safety copy; `--yes` skips the question.
 
-This procedure was exercised end to end: an installation with twenty projects was backed up,
-removed including all volumes, reinstalled empty and restored; the project list, file contents
-and compilation were verified afterwards. Test it yourself once before you rely on it.
+Backups made by the 0.1.0 scripts (`projects.tar.gz`, no manifest) can be restored too.
+
+This procedure is tried by the pipeline on every change (`scripts/backup-roundtrip.sh`): it backs
+up a running installation, damages it, restores it, wipes it and restores it again onto the empty
+one, and restores a backup of the older kind; each time accounts, projects, database migrations
+and every project file must be as they were. It also checks that a backup that is killed starts
+the app again. Test it on your own machine once before you rely on it.
 
 ## Upgrade
 
