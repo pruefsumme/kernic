@@ -1,7 +1,10 @@
-import { gitRemotes, projectDir } from '../config';
+import { gitRemotes, projectDir, projectTreeDir, treeLimits } from '../config';
 import { sql } from '../db/client';
+import { assertWorkspaceRoom, bumpRevision } from '../projects/projects';
+import { treeUsage } from '../projects/tree';
 import { openSecret, sealSecret } from '../secrets';
-import { ProjectHistory, type Remote } from './git';
+import { ProjectHistory, type Author, type PullResult, type Remote } from './git';
+import { withHistory } from './history';
 import { parseBranch, parseRemoteUrl, parseToken, parseUsername } from './remote-url';
 
 /**
@@ -126,15 +129,13 @@ export async function disconnectProjectRemote(projectId: string): Promise<boolea
 	return removed.count > 0;
 }
 
-/** Projects with a push under way, so that a second one waits its turn by being told so. */
-const pushing = new Set<string>();
+/** Projects with a push or pull under way, so that a second one is told to wait. */
+const busy = new Set<string>();
 
-/**
- * Pushes a project's checkpoints to its repository and returns the connection
- * as it is afterwards. Throws `RemoteError` with the reason if the forge
- * refuses, `NothingToPushError` before the first checkpoint.
- */
-export async function pushProject(projectId: string): Promise<ProjectRemote> {
+/** The connection of a project as Git needs it, with its token opened. Throws if it may not be used. */
+async function openConnection(
+	projectId: string
+): Promise<{ row: RemoteRow; remote: Remote; label: string }> {
 	const row = await findRow(projectId);
 	if (!row) throw new RemoteUnavailableError('This project is not connected to a repository.');
 	if (!remotesEnabled || !gitRemotes.origins.includes(new URL(row.url).origin)) {
@@ -143,21 +144,39 @@ export async function pushProject(projectId: string): Promise<ProjectRemote> {
 			`This server is no longer set up to connect to ${new URL(row.url).host}.`
 		);
 	}
-	if (pushing.has(projectId)) {
-		throw new RemoteUnavailableError('A push of this project is already under way.');
-	}
+	const token = openSecret(gitRemotes.secretKey, TOKEN_PURPOSE, projectId, row.token_sealed);
+	const location = new URL(row.url);
+	return {
+		row,
+		remote: { url: row.url, branch: row.branch, username: row.username, token },
+		label: `${location.host}${location.pathname.replace(/\.git$/, '')} (${row.branch})`
+	};
+}
 
-	pushing.add(projectId);
+/** Runs one push or pull of a project at a time. */
+async function exclusively<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+	if (busy.has(projectId)) {
+		throw new RemoteUnavailableError('A push or pull of this project is already under way.');
+	}
+	busy.add(projectId);
 	try {
-		const token = openSecret(gitRemotes.secretKey, TOKEN_PURPOSE, projectId, row.token_sealed);
+		return await work();
+	} finally {
+		busy.delete(projectId);
+	}
+}
+
+/**
+ * Pushes a project's checkpoints to its repository and returns the connection
+ * as it is afterwards. Throws `RemoteError` with the reason if the forge
+ * refuses, `NothingToPushError` before the first checkpoint.
+ */
+export async function pushProject(projectId: string): Promise<ProjectRemote> {
+	const { row, remote } = await openConnection(projectId);
+	return exclusively(projectId, async () => {
 		// Not under the project's lock: a slow forge must not hold up saving. A push
 		// only reads what checkpoints have already written.
-		const checkpoint = await new ProjectHistory(projectDir(projectId)).push({
-			url: row.url,
-			branch: row.branch,
-			username: row.username,
-			token
-		});
+		const checkpoint = await new ProjectHistory(projectDir(projectId)).push(remote);
 		const [updated] = await sql<RemoteRow[]>`
 			UPDATE project_remotes
 			SET last_pushed_at = now(), last_pushed_checkpoint = ${checkpoint}
@@ -168,7 +187,54 @@ export async function pushProject(projectId: string): Promise<ProjectRemote> {
 		return updated
 			? toRemote(updated)
 			: { ...toRemote(row), lastPushedAt: new Date(), lastPushedCheckpoint: checkpoint };
-	} finally {
-		pushing.delete(projectId);
-	}
+	});
+}
+
+/** What a pull of a project's repository came to. */
+export type PullOutcome = PullResult & { revision?: number };
+
+/**
+ * Takes over what the project's repository has (see `ProjectHistory.pull`).
+ * Without `choices` it fetches first; with them it settles the conflicts found
+ * by an earlier call, which is refused if the project or the repository has
+ * changed since. Throws `RemoteError` when the forge cannot be talked to,
+ * `PullError` for what may not be taken over, and `WorkspaceLimitError` when
+ * the result would not fit in the workspace.
+ */
+export async function pullProject(input: {
+	projectId: string;
+	workspaceId: string;
+	author: Author;
+	choices?: Record<string, 'ours' | 'theirs'>;
+	theirs?: string;
+	ours?: string;
+}): Promise<PullOutcome> {
+	const { remote, label } = await openConnection(input.projectId);
+	return exclusively(input.projectId, async () => {
+		const history = new ProjectHistory(projectDir(input.projectId));
+		// Outside the project's lock, like a push: only the merge below needs it.
+		const theirs =
+			input.theirs ??
+			(await history.fetchBranch(
+				remote,
+				Math.max(treeLimits.maxProjectBytes * 2, 64 * 1024 * 1024)
+			));
+
+		const outcome = await withHistory(input.projectId, (locked) =>
+			locked.pull({
+				theirs,
+				author: input.author,
+				limits: treeLimits,
+				label,
+				choices: input.choices,
+				expectedOurs: input.ours,
+				beforeApply: async ({ bytes }) => {
+					const current = (await treeUsage(projectTreeDir(input.projectId))).bytes;
+					await assertWorkspaceRoom(input.workspaceId, { bytes: Math.max(0, bytes - current) });
+				}
+			})
+		);
+		if (outcome.status !== 'merged') return outcome;
+		return { ...outcome, revision: await bumpRevision(input.projectId) };
+	});
 }

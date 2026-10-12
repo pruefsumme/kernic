@@ -32,6 +32,7 @@
 		'project.remote-connected': 'Connected the project to a Git repository',
 		'project.remote-disconnected': 'Disconnected the project from its Git repository',
 		'project.pushed': 'Pushed the checkpoints of the project',
+		'project.pulled': 'Pulled changes from the Git repository into the project',
 		'workspace.created': 'Created the shared workspace',
 		'workspace.deleted': 'Deleted the shared workspace',
 		'workspace.invite-created': 'Created a link to join the workspace',

@@ -107,6 +107,25 @@ const toRemoteStatus = (body: RemoteStatusBody | null): RemoteStatus | null =>
 		unpushed: body.unpushed
 	};
 
+/** A file that both the project and its repository changed. */
+export interface PullConflict {
+	path: string;
+	kind: 'both-changed' | 'both-added' | 'deleted-here' | 'deleted-there';
+}
+
+export type PullOutcome = { remote: RemoteStatus | null } & (
+	| { status: 'up-to-date' }
+	| { status: 'merged'; fastForward: boolean; changed: number; revision: number }
+	| {
+			status: 'conflicts';
+			conflicts: PullConflict[];
+			/** The two versions the conflicts are about, to be sent back with the choices. */
+			ours: string;
+			theirs: string;
+			recorded: boolean;
+	  }
+);
+
 export class ApiError extends Error {
 	readonly status: number;
 	/** Machine-readable reason from the server, e.g. `conflict`. */
@@ -328,6 +347,22 @@ export function createProjectApi(projectId: string) {
 
 		async createCheckpoint(message: string): Promise<void> {
 			await request(`${base}/history`, json({ message }));
+		},
+
+		/**
+		 * Takes over what the project's repository has. If both sides changed the
+		 * same files nothing is applied and they are listed; send the versions
+		 * back with a choice for each file to settle them.
+		 */
+		async pull(settle?: {
+			choices: Record<string, 'ours' | 'theirs'>;
+			ours: string;
+			theirs: string;
+		}): Promise<PullOutcome> {
+			const body = (await (await request(`${base}/history/pull`, json(settle ?? {}))).json()) as {
+				remote: RemoteStatusBody | null;
+			} & Record<string, unknown>;
+			return { ...body, remote: toRemoteStatus(body.remote) } as PullOutcome;
 		},
 
 		/** Pushes the checkpoints to the project's repository and returns where that stands now. */

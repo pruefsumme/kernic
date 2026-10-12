@@ -172,13 +172,24 @@ KERNIC_SECRET_KEY=<output of: openssl rand -hex 32>
 - **In the app.** An owner of a workspace connects a project under Settings → Git repository,
   with the address of an empty repository, a branch and an access token that may write to it.
   The server tries the address and the token before it stores them. Everyone who may edit the
-  project can then push from the History panel. A push only adds: if the branch on the forge
-  holds commits the project does not have, nothing is pushed and the panel says so.
+  project can then push and pull from the History panel. A push only adds: if the branch on the
+  forge holds commits the project does not have, nothing is pushed and the panel says so; pull
+  them first.
 - **What is sent.** The checkpoints, with the names and e-mail addresses of the people who made
   them. Automatic snapshots stay on the server.
+- **Pulling.** The branch is fetched and merged with the project. If the project has nothing
+  the repository lacks, it just moves forward. Otherwise the two are merged; where both changed
+  different parts they are combined, and where both changed the same file the person pulling
+  chooses between the two versions of that file, one choice per file. Their own files are
+  recorded as a checkpoint first, so a pull can be undone by restoring it. Files in a
+  repository that a project cannot hold (links, submodules, names with odd characters, files
+  over the limits above) are refused as a whole.
+- **Disk.** A pull brings the repository's whole history into the project's own repository,
+  which is kept next to its files and is not counted in the workspace's storage. A fetch that
+  would add more than twice `KERNIC_MAX_PROJECT_MB` (at least 64 MB) is refused and removed.
+  Git 2.38 or newer is needed in the app's image; the one in the image is.
 
-Taking changes over from a repository (pulling) and creating a project from a repository are
-not built yet.
+Creating a project from a repository is not built yet.
 
 ### Fonts
 
