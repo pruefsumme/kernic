@@ -84,3 +84,15 @@ Not built yet:
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
 - Sharing a workspace between several people, sharing links and review
 - Tinymist language server features, real-time collaboration
+
+## Licence
+
+Kernic is free software under the [GNU Affero General Public License, version 3](LICENSE)
+(AGPL-3.0-only). You may run, study, modify and share it. If you run a modified version as a
+network service, you must offer its users the source of your changes.
+
+Copyright (C) 2026 pruefsumme
+
+Kernic uses other open-source software under its own licences; the Typst compiler and the Tinymist
+language server in the compile worker are Apache-2.0. "Kernic" is the name of this project and is not
+covered by the licence.

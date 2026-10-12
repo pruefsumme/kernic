@@ -2,6 +2,7 @@
 	"name": "@kernic/worker",
 	"private": true,
 	"version": "0.0.1",
+	"license": "AGPL-3.0-only",
 	"type": "module",
 	"description": "Isolated Typst compile worker. Holds no application secrets and no database access.",
 	"engines": {
