@@ -1,6 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { recordAudit } from '#lib/server/audit.ts';
 import { projectTreeDir } from '#lib/server/config.ts';
+import { RemoteError } from '#lib/server/history/git.ts';
+import { RemoteUrlError } from '#lib/server/history/remote-url.ts';
+import {
+	connectProjectRemote,
+	disconnectProjectRemote,
+	getProjectRemote,
+	remoteHosts,
+	RemoteUnavailableError
+} from '#lib/server/history/remotes.ts';
 import { requireProject } from '#lib/server/http.ts';
 import { InvalidPathError } from '#lib/server/projects/paths.ts';
 import {
@@ -37,6 +46,9 @@ export const load: PageServerLoad = async (event) => {
 		// Links for reading are an owner's to make and to see.
 		shares: role === 'owner' ? await listProjectShares(project.id) : [],
 		shareLifetimes: [...SHARE_LIFETIMES_DAYS],
+		// The repository checkpoints are pushed to, for everyone to see; its token is nobody's to see.
+		remote: await getProjectRemote(project.id),
+		remoteHosts,
 		// Where the project could go: workspaces in which this person may create projects.
 		moveTargets: workspaces
 			.filter((workspace) => workspace.id !== project.workspaceId && canWrite(workspace.role))
@@ -119,6 +131,57 @@ export const actions: Actions = {
 		await revokeProjectShare(project.id, shareId);
 		await recordAudit(event, 'project.share-revoked', { subject: project.name });
 		return { action: 'unshare' };
+	},
+
+	/** Connects the project to a Git repository, after trying the address and the token. */
+	connect: async (event) => {
+		const { project, role, user } = await requireProject(event, 'write');
+		if (role !== 'owner') {
+			return fail(403, {
+				action: 'connect',
+				message: 'Only workspace owners can connect a project to a repository.'
+			});
+		}
+		const form = await event.request.formData();
+		const entered = {
+			url: String(form.get('url') ?? ''),
+			branch: String(form.get('branch') ?? ''),
+			username: String(form.get('username') ?? '')
+		};
+		try {
+			await connectProjectRemote({
+				projectId: project.id,
+				userId: user.id,
+				...entered,
+				token: form.get('token')
+			});
+		} catch (error) {
+			if (
+				error instanceof RemoteUrlError ||
+				error instanceof RemoteError ||
+				error instanceof RemoteUnavailableError
+			) {
+				// What was typed comes back, except the token.
+				return fail(400, { action: 'connect', message: error.message, entered });
+			}
+			throw error;
+		}
+		await recordAudit(event, 'project.remote-connected', { subject: project.name });
+		return { action: 'connect', saved: true };
+	},
+
+	disconnect: async (event) => {
+		const { project, role } = await requireProject(event, 'write');
+		if (role !== 'owner') {
+			return fail(403, {
+				action: 'disconnect',
+				message: 'Only workspace owners can disconnect a project from its repository.'
+			});
+		}
+		if (await disconnectProjectRemote(project.id)) {
+			await recordAudit(event, 'project.remote-disconnected', { subject: project.name });
+		}
+		return { action: 'disconnect', saved: true };
 	},
 
 	move: async (event) => {

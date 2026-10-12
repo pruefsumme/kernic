@@ -17,9 +17,11 @@ RUN pnpm --filter @kernic/web build
 RUN pnpm --filter @kernic/web deploy --legacy --prod /out
 
 FROM node:24-bookworm-slim
-# Git records the version history (checkpoints) of each project.
+# Git records the version history (checkpoints) of each project. The certificate
+# authorities are for Git itself: it pushes checkpoints to forges over HTTPS and
+# does not use the ones built into Node.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends git \
+	&& apt-get install -y --no-install-recommends git ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/package.json ./

@@ -10,7 +10,8 @@ import { promisify } from 'node:util';
  * The repository lives outside the working tree (`repo.git` beside `tree/`), so
  * project files can never contain or modify Git's own configuration or hooks.
  * Git is run with a fixed, minimal configuration: no system or user config, no
- * hooks, no network transports, no prompts.
+ * hooks, no prompts, and no network transports except in the few commands that
+ * talk to a repository elsewhere (see "A repository elsewhere" below).
  *
  * History only moves forward. Restoring an older checkpoint records the current
  * state first and then adds a new checkpoint with the old content; nothing is
@@ -75,6 +76,7 @@ export class UnknownCheckpointError extends Error {
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_DIFF_LINES_PER_FILE = 1500;
 const GIT_TIMEOUT_MS = 60_000;
+const GIT_REMOTE_TIMEOUT_MS = 120_000;
 const FIELD = '\x1f';
 
 const SNAPSHOT_REFS = 'refs/kernic/snapshots/';
@@ -427,6 +429,187 @@ export class ProjectHistory {
 		});
 		return child.stdout;
 	}
+
+	// --- A repository elsewhere ----------------------------------------------
+	//
+	// The only commands that use the network. They may talk to the one address
+	// they are given, over HTTP(S), without following it anywhere else, and the
+	// token travels in the environment of the one Git process that needs it:
+	// never in its arguments, the repository's configuration or a message.
+
+	async #gitRemote(args: string[], remote: Remote): Promise<string> {
+		const protocol = new URL(remote.url).protocol.slice(0, -1);
+		const credentials = Buffer.from(`${remote.username}:${remote.token}`).toString('base64');
+		try {
+			const { stdout } = await execFileAsync(
+				'git',
+				this.#arguments([
+					// After `protocol.allow=never`: this one protocol, for this one command.
+					'-c',
+					`protocol.${protocol}.allow=always`,
+					// A forge that answers "go elsewhere" is not followed there with the token.
+					'-c',
+					'http.followRedirects=false',
+					'-c',
+					'credential.helper=',
+					// Gives up on a connection that stalls instead of holding it open.
+					'-c',
+					'http.lowSpeedLimit=1000',
+					'-c',
+					'http.lowSpeedTime=30',
+					...args
+				]),
+				{
+					env: {
+						...this.#environment,
+						GIT_CONFIG_COUNT: '1',
+						GIT_CONFIG_KEY_0: `http.${remote.url}.extraHeader`,
+						GIT_CONFIG_VALUE_0: `Authorization: Basic ${credentials}`
+					},
+					maxBuffer: MAX_OUTPUT_BYTES,
+					timeout: GIT_REMOTE_TIMEOUT_MS
+				}
+			);
+			return stdout;
+		} catch (cause) {
+			throw explainRemoteFailure(cause, remote);
+		}
+	}
+
+	/** The newest checkpoint, or null if there is none yet. */
+	async head(): Promise<string | null> {
+		await this.#ensureRepository();
+		if (!(await this.#hasCheckpoints())) return null;
+		return (await this.#git(['rev-parse', 'HEAD'])).trim();
+	}
+
+	/**
+	 * How many checkpoints were made after the given one; all of them if it is
+	 * not part of this project's history (any more).
+	 */
+	async checkpointsSince(checkpointId: string | null): Promise<number> {
+		await this.#ensureRepository();
+		if (!(await this.#hasCheckpoints())) return 0;
+		let range = 'HEAD';
+		if (checkpointId !== null && isCheckpointId(checkpointId)) {
+			try {
+				await this.#git(['merge-base', '--is-ancestor', checkpointId, 'HEAD']);
+				range = `${checkpointId}..HEAD`;
+			} catch {
+				// not an ancestor: everything counts
+			}
+		}
+		return Number((await this.#git(['rev-list', '--count', range])).trim());
+	}
+
+	/**
+	 * Asks the repository for its branch: proof that the address and the token
+	 * work. Returns the commit the branch is at, or null if it does not exist yet.
+	 */
+	async lookAtRemote(remote: Remote): Promise<string | null> {
+		await this.#ensureRepository();
+		const output = await this.#gitRemote(
+			['ls-remote', '--heads', remote.url, `refs/heads/${remote.branch}`],
+			remote
+		);
+		const id = output.split('\t')[0]?.trim() ?? '';
+		return isCheckpointId(id) ? id : null;
+	}
+
+	/**
+	 * Sends the checkpoints to the repository's branch. Only ever adds to it: if
+	 * the branch holds commits this project does not have, nothing is sent and a
+	 * `RemoteError` of kind `diverged` says so. Returns the checkpoint now there.
+	 */
+	async push(remote: Remote): Promise<string> {
+		const head = await this.head();
+		if (head === null) throw new NothingToPushError();
+		await this.#gitRemote(
+			['push', '--porcelain', '--no-verify', remote.url, `${head}:refs/heads/${remote.branch}`],
+			remote
+		);
+		return head;
+	}
+}
+
+/** A repository elsewhere and what is needed to write to it. */
+export interface Remote {
+	/** As checked by `parseRemoteUrl`. */
+	url: string;
+	branch: string;
+	username: string;
+	token: string;
+}
+
+export class NothingToPushError extends Error {
+	constructor() {
+		super('There is no checkpoint to push yet. Create one first.');
+	}
+}
+
+export type RemoteFailure =
+	| 'credentials'
+	| 'not-found'
+	| 'diverged'
+	| 'refused'
+	| 'unreachable'
+	| 'certificate'
+	| 'redirected'
+	| 'failed';
+
+const REMOTE_FAILURE_MESSAGES: Record<RemoteFailure, string> = {
+	credentials:
+		'The repository did not accept the token. Check that it is still valid and may write to this repository.',
+	'not-found':
+		'There is no repository at that address, or the token may not see it. Create an empty repository on the forge first.',
+	diverged:
+		'The branch of the repository contains commits this project does not have, so nothing was pushed. Use an empty branch or repository; taking changes over from a repository is not possible yet.',
+	refused:
+		'The repository refused the push. The branch may be protected, or the token may only read.',
+	unreachable: 'The server could not reach the forge. Try again later.',
+	certificate: 'The certificate of the forge could not be verified, so nothing was sent to it.',
+	redirected:
+		'The forge answered with a redirect to another address. Enter the address the repository has now.',
+	failed: "The push did not work. The server's log has the details."
+};
+
+/** Why talking to a repository did not work, in words for the person who asked. */
+export class RemoteError extends Error {
+	readonly kind: RemoteFailure;
+	constructor(kind: RemoteFailure) {
+		super(REMOTE_FAILURE_MESSAGES[kind]);
+		this.kind = kind;
+	}
+}
+
+/** Reads Git's complaint (always in English, see `LC_ALL`) into one of the known reasons. */
+function explainRemoteFailure(cause: unknown, remote: Remote): RemoteError {
+	const failure = cause as { stdout?: string; stderr?: string; killed?: boolean };
+	const output = `${failure.stdout ?? ''}\n${failure.stderr ?? ''}`;
+	let kind: RemoteFailure = 'failed';
+	if (failure.killed) kind = 'unreachable';
+	else if (/\[rejected\]|non-fast-forward|fetch first/.test(output)) kind = 'diverged';
+	else if (/\[remote rejected\]|protected branch|pre-receive hook declined/.test(output))
+		kind = 'refused';
+	else if (/Authentication failed|error: 401|could not read Username/.test(output))
+		kind = 'credentials';
+	else if (/error: 403/.test(output)) kind = 'refused';
+	else if (/not found|error: 404/.test(output)) kind = 'not-found';
+	else if (/error: 30\d|redirect/i.test(output)) kind = 'redirected';
+	else if (/SSL|certificate/i.test(output)) kind = 'certificate';
+	else if (
+		/Could not resolve host|Failed to connect|Connection refused|timed out|Couldn't connect|transfer closed|Operation too slow/i.test(
+			output
+		)
+	)
+		kind = 'unreachable';
+
+	if (kind === 'failed') {
+		// Never the token, not even by accident of a message quoting a header.
+		const scrubbed = output.replaceAll(remote.token, '***').slice(0, 2000);
+		console.error(`git could not talk to ${remote.url}:\n${scrubbed}`);
+	}
+	return new RemoteError(kind);
 }
 
 const HEADER = /^diff --git a\/(.*) b\/(.*)$/;

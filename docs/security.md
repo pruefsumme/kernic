@@ -141,6 +141,44 @@ signed-in user's files, and everything fetched from outside (packages).
   worker itself receives each rendering before dropping it, and how large a hostile document
   can make one has not been measured; the container's memory limit is what bounds it.
 
+### Repositories elsewhere
+
+A project can push its checkpoints to a Git repository on a forge. That makes the server open
+connections and hold other people's credentials, so:
+
+- **Where it connects.** Only to hosts the administrator lists in `KERNIC_GIT_HOSTS`; without a
+  list the feature is off and the settings page offers nothing to fill in. An address must be
+  `http(s)://` on a listed host and port, with a plain repository path and nothing else: no
+  credentials, query or other protocol. Git is told to allow that one protocol for that one
+  command and to follow no redirects, so a listed forge cannot send the server, or the token,
+  elsewhere. **Tested:** hosts that only look like a listed one, other ports and protocols,
+  `ssh`, `file` and `ext` addresses, addresses with credentials or options in them, and a forge
+  that redirects (nothing arrives at the target).
+- **The token.** Stored encrypted (AES-256-GCM) with a key derived from `KERNIC_SECRET_KEY`,
+  which is not in the database, and bound to its project: copied to another project's row it
+  does not open. It is never sent to a browser again. When Git runs, the token is in the
+  environment of that one process: not in its arguments, not in the project's repository, not
+  in a message. **Tested:** the stored bytes do not contain the token and do not open with
+  another key, project or after a change; the repository's configuration and what the server
+  logs on failures do not contain it; the settings page does not contain it.
+- **What a push can do.** It adds to one branch. It never forces: if the branch holds commits
+  the project does not have, nothing is sent. It sends checkpoints only, not the automatic
+  snapshots. **Tested** against a stand-in forge that is real Git behind tokens, and on
+  12 October 2026 against Forgejo 13.0.5: a first push, a later one, a repository with commits
+  of its own, a protected branch, a token that may only read, a wrong token, a repository
+  that does not exist.
+- **Who.** Connecting and disconnecting is for owners of the workspace; pushing for whoever may
+  edit the project; all three are recorded in the activity log. **Tested:** an editor cannot
+  connect, a viewer cannot push, someone outside the workspace gets "not found".
+- **Where Git runs.** In the app, as for checkpoints: without hooks, without the machine's or
+  the account's Git configuration, without prompts, with a time limit of two minutes, outside
+  the project's lock so that a slow forge does not hold up saving. Never in the compile worker.
+- **Not covered:** a host on the list is trusted to be what its name says. An administrator who
+  lists a host that resolves to an internal address lets people with a project reach a Git
+  server there. Checkpoints carry their authors' names and e-mail addresses, and pushing
+  publishes them to whoever can read the repository; the settings page says so. Git is not
+  confined beyond the app's own container.
+
 ### Uploads, archives, packages
 
 - Paths: one validator for every path; rejects `..`, absolute paths, backslashes, control

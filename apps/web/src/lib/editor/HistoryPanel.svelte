@@ -3,7 +3,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import PromptDialog from '#lib/components/PromptDialog.svelte';
 	import { formatExact, formatWhen } from '#lib/format.ts';
-	import type { Change, Checkpoint, Snapshot } from './api.ts';
+	import type { Change, Checkpoint, RemoteStatus, Snapshot } from './api.ts';
 	import DiffDialog from './DiffDialog.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 	import SidePanel from './SidePanel.svelte';
@@ -25,6 +25,11 @@
 	let showAllSnapshots = $state(false);
 	let changes = $state<Change[]>([]);
 	let error = $state<string | null>(null);
+	/** The repository the checkpoints are pushed to, if the project is connected to one. */
+	let remote = $state<RemoteStatus | null>(null);
+	let pushing = $state(false);
+	let pushError = $state<string | null>(null);
+	let pushed = $state(false);
 
 	let creating = $state(false);
 	let restoring = $state<Version | null>(null);
@@ -49,6 +54,7 @@
 			checkpoints = history.checkpoints;
 			snapshots = history.snapshots;
 			changes = history.changes;
+			remote = history.remote;
 			error = null;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'The history could not be loaded.';
@@ -66,6 +72,23 @@
 		await session.api.createCheckpoint(message);
 		await refresh();
 	}
+
+	async function push() {
+		pushing = true;
+		pushError = null;
+		pushed = false;
+		try {
+			remote = await session.api.push();
+			pushed = true;
+		} catch (cause) {
+			pushError = cause instanceof Error ? cause.message : 'The push did not work.';
+		} finally {
+			pushing = false;
+		}
+	}
+
+	/** A repository's address without the protocol, as people say it. */
+	const spoken = (url: string) => url.replace(/^https?:\/\//, '').replace(/\.git$/, '');
 
 	async function restore() {
 		if (!restoring) return;
@@ -137,6 +160,37 @@
 				{/if}
 			</div>
 		</section>
+
+		{#if remote}
+			<section class="block remote" aria-label="Git repository">
+				<p class="count">
+					<Icon name="upload" size={16} />
+					<span class="file" title="{remote.url}, branch {remote.branch}">{spoken(remote.url)}</span
+					>
+				</p>
+				<p class="note" role="status">
+					{#if pushing}
+						Pushing…
+					{:else if checkpoints.length === 0}
+						Nothing to push before the first checkpoint.
+					{:else if remote.unpushed === 0}
+						{pushed ? 'Pushed.' : 'All checkpoints are pushed.'}
+						{#if remote.lastPushedAt}Last push {formatWhen(remote.lastPushedAt)}.{/if}
+					{:else}
+						{remote.unpushed === 1 ? '1 checkpoint is' : `${remote.unpushed} checkpoints are`} not pushed
+						yet.
+					{/if}
+				</p>
+				{#if pushError}<p class="form-error" role="alert">{pushError}</p>{/if}
+				{#if session.canWrite && checkpoints.length > 0 && (remote.unpushed > 0 || pushError)}
+					<div class="actions">
+						<button class="button small" type="button" disabled={pushing} onclick={push}>
+							Push to {remote.branch}
+						</button>
+					</div>
+				{/if}
+			</section>
+		{/if}
 
 		{#if checkpoints.length > 0}
 			<h3>Checkpoints</h3>
@@ -289,6 +343,25 @@
 	.count {
 		font-size: var(--t-ui);
 		font-weight: 500;
+	}
+
+	/* The repository: its address on one line, cut off rather than wrapped. */
+	.remote {
+		padding-top: var(--s-3);
+		border-top: 1px solid var(--rule);
+	}
+
+	.remote .count {
+		display: flex;
+		align-items: center;
+		gap: var(--s-2);
+		max-width: 100%;
+		min-width: 0;
+		margin: 0;
+	}
+
+	.remote .note {
+		margin: 0;
 	}
 
 	.changes {

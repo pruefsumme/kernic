@@ -83,6 +83,8 @@ Set these in `deploy/.env`, then apply with `docker compose up -d`.
 | `KERNIC_MAX_WORKSPACE_MB` | `2000` | Most megabytes of project files in one workspace. Each person has a workspace of their own. See "Sharing a server" below. |
 | `KERNIC_MAX_WORKSPACE_PROJECTS` | `200` | Most projects in one workspace. |
 | `KERNIC_MAX_WAITING_COMPILES` | `20` | Most compiles one account may have waiting or running at once. |
+| `KERNIC_GIT_HOSTS` | empty | Git forges that projects may push their checkpoints to: host names separated by commas. Empty turns this off. See "Git repositories" below. |
+| `KERNIC_SECRET_KEY` | empty | Encrypts stored access tokens; at least 32 characters. Required when `KERNIC_GIT_HOSTS` is set. |
 | `KERNIC_WORKER_CPUS` | `2` | CPU limit of the compile worker. |
 | `KERNIC_WORKER_MEMORY` | `4g` | Memory limit of the compile worker. |
 | `KERNIC_COMPILE_TIMEOUT_MS` | `20000` | A compile is stopped after this time. |
@@ -146,6 +148,38 @@ If you raise `KERNIC_MAX_PROJECT_MB` above 200, also raise `BODY_SIZE_LIMIT` of 
 `apps/web/Dockerfile`, default `256M`) by adding it under `app.environment` in `compose.yaml`;
 it must stay larger than the project limit.
 
+### Git repositories
+
+A project keeps its checkpoints in a Git repository of its own on the server. It can also push
+them to a repository on a forge such as Forgejo or Gitea, so that the history exists in a second
+place and can be read with any Git tool.
+
+This is off until you name the forges the server may connect to:
+
+```sh
+KERNIC_GIT_HOSTS=git.example.org,codeberg.org
+KERNIC_SECRET_KEY=<output of: openssl rand -hex 32>
+```
+
+- **Hosts.** The server opens these connections itself, so it only connects to hosts on this
+  list, over HTTPS. A forge that is only reachable without TLS, for example one on the same
+  private network, is written with its protocol and port: `http://forgejo:3000`. Addresses for
+  SSH (`git@…`) are not supported. A forge that answers with a redirect is not followed.
+- **The key.** People enter an access token for their repository; it is stored encrypted with
+  `KERNIC_SECRET_KEY`. Keep the key with your backups. If it is lost or changed, the stored
+  tokens cannot be read; projects then have to be disconnected and connected again. Nothing
+  else depends on it.
+- **In the app.** An owner of a workspace connects a project under Settings → Git repository,
+  with the address of an empty repository, a branch and an access token that may write to it.
+  The server tries the address and the token before it stores them. Everyone who may edit the
+  project can then push from the History panel. A push only adds: if the branch on the forge
+  holds commits the project does not have, nothing is pushed and the panel says so.
+- **What is sent.** The checkpoints, with the names and e-mail addresses of the people who made
+  them. Automatic snapshots stay on the server.
+
+Taking changes over from a repository (pulling) and creating a project from a repository are
+not built yet.
+
 ### Fonts
 
 Documents can use the fonts built into Typst (Libertinus Serif, New Computer Modern, DejaVu Sans
@@ -187,6 +221,9 @@ Two things hold your data, and a backup needs both:
 
 - the **database** (accounts, project list, settings), and
 - the **`kernic-data` volume** (the files of every project and their version history).
+
+If you use Git repositories (see above), also keep `KERNIC_SECRET_KEY` from `deploy/.env`
+somewhere safe: the access tokens in the database can only be read with it.
 
 `deploy/backup.sh` saves both. It stops the app for a few seconds so that the two are captured at
 the same moment, and starts it again:

@@ -6,6 +6,8 @@ import {
 	dataDir,
 	databaseUrl,
 	externalBaseURL,
+	forgeOrigin,
+	forgePort,
 	registryPort,
 	setupToken,
 	workerDir,
@@ -66,6 +68,11 @@ export default defineConfig({
 					reuseExistingServer: false
 				},
 				{
+					command: 'node e2e/fake-forge.ts',
+					url: `http://127.0.0.1:${forgePort}/healthz`,
+					reuseExistingServer: false
+				},
+				{
 					command: 'mkdir -p e2e/.logs && node e2e/reset.ts && node build > e2e/.logs/app.log 2>&1',
 					url: `${baseURL}/healthz`,
 					reuseExistingServer: false,
@@ -84,6 +91,9 @@ export default defineConfig({
 						KERNIC_PACKAGE_REGISTRY: `http://127.0.0.1:${registryPort}`,
 						// Small enough for a test to fill, far more than the other tests use.
 						KERNIC_MAX_WORKSPACE_MB: '64',
+						// The stand-in forge is the one host projects may be connected to.
+						KERNIC_GIT_HOSTS: forgeOrigin,
+						KERNIC_SECRET_KEY: 'e2e-secret-key-of-thirty-two-characters',
 						KERNIC_WORKER_URL: `http://127.0.0.1:${workerPort}`,
 						KERNIC_WORKER_TOKEN: workerToken
 					}
