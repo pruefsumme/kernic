@@ -38,6 +38,7 @@ export const load: PageServerLoad = async (event) => {
 			updatedAt: project.updatedAt,
 			workspaceId: project.workspaceId,
 			workspaceName: project.workspaceName,
+			shared: project.workspaceKind === 'team',
 			role: project.role,
 			thumbnailHash: thumbnail.get(project.id) ?? null
 		})),

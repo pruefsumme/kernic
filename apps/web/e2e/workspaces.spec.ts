@@ -55,8 +55,13 @@ const saveAs = (page: Page, text: string) =>
 test('an owner creates a shared workspace with a project in it', async ({ page, browser }) => {
 	theirs = await accountFor(page, browser);
 
+	// "Workspaces" opens on the personal one; shared ones are listed apart from it.
 	await page.goto('/workspaces');
-	await page.getByLabel('New shared workspace').fill(workspaceName);
+	await expect(page.getByRole('heading', { name: 'Personal', level: 1 })).toBeVisible();
+	await expect(page.getByText('Only you can open these projects.')).toBeVisible();
+	const list = page.getByRole('navigation', { name: 'Workspaces' });
+	await list.getByRole('link', { name: 'New shared workspace' }).click();
+	await page.getByLabel('Name').fill(workspaceName);
 	await page.getByRole('button', { name: 'Create workspace' }).click();
 	await expect(page.getByRole('heading', { name: workspaceName, level: 1 })).toBeVisible();
 	workspaceUrl = new URL(page.url()).pathname;
@@ -69,6 +74,27 @@ test('an owner creates a shared workspace with a project in it', async ({ page, 
 	await page.getByRole('button', { name: 'Move project' }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Moved' })).toBeVisible();
 	await expect(page.getByText(`This project is in ${workspaceName}`)).toBeVisible();
+
+	// The workspace lists it, and the dashboard marks it as shared and can show it alone.
+	await page.goto(workspaceUrl);
+	await expect(list.getByRole('link', { name: workspaceName })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	await expect(page.getByRole('link', { name: 'Group report' })).toBeVisible();
+	await page.goto('/');
+	const shared = page.locator('.projects li', { hasText: 'Group report' });
+	await expect(shared.getByTitle(`In the shared workspace ${workspaceName}`)).toBeVisible();
+	await page
+		.getByRole('group', { name: 'Show projects of' })
+		.getByRole('button', { name: workspaceName })
+		.click();
+	await expect(page.locator('.projects li')).toHaveCount(1);
+	await page
+		.getByRole('group', { name: 'Show projects of' })
+		.getByRole('button', { name: 'Personal' })
+		.click();
+	await expect(page.locator('.projects li', { hasText: 'Group report' })).toHaveCount(0);
 
 	// Until they are a member, the colleague cannot reach any of it.
 	expect((await theirs.request.get(`/api/projects/${projectId}/tree`)).status()).toBe(404);
@@ -93,7 +119,7 @@ test('someone joins through a link, once, in the role it names', async ({ page }
 	await openSection(theirs, 'Members');
 	await expect(theirs.getByText(colleague.email)).toBeVisible();
 	const theirSections = theirs.getByRole('navigation', { name: 'Sections' }).getByRole('link');
-	await expect(theirSections).toHaveText(['Overview', 'Members']);
+	await expect(theirSections).toHaveText([/Projects/, /Members/]);
 
 	// The link is spent.
 	await theirs.goto(link);
@@ -186,13 +212,14 @@ test('a workspace is deleted only when it is empty', async ({ page }) => {
 
 	// The project goes back to the owner's own workspace; then the shared one can go.
 	await page.goto(`/projects/${projectId}/settings?section=sharing`);
-	await page.getByLabel('Move to').selectOption({ label: 'Your projects (only you)' });
+	await page.getByLabel('Move to').selectOption({ label: 'Personal (only you)' });
 	await page.getByRole('button', { name: 'Move project' }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Moved' })).toBeVisible();
 
 	await page.goto(`${workspaceUrl}?section=settings`);
 	await page.getByRole('button', { name: 'Delete this workspace' }).click();
-	await expect(page).toHaveURL('/workspaces');
+	// Back on the personal workspace, with the deleted one gone from the list.
+	await expect(page.getByRole('heading', { name: 'Personal', level: 1 })).toBeVisible();
 	await expect(page.getByText(workspaceName)).toHaveCount(0);
 	await theirs.context().close();
 });

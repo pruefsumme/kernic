@@ -216,7 +216,7 @@
 					{@const share = Math.min(100, (workspace.usage.bytes / workspace.usage.maxBytes) * 100)}
 					<div class="usage">
 						<p>
-							<strong>{workspace.kind === 'personal' ? 'Your projects' : workspace.name}</strong>
+							<strong>{workspace.kind === 'personal' ? 'Personal' : workspace.name}</strong>
 							<span>
 								{formatBytes(workspace.usage.bytes)} of {formatBytes(workspace.usage.maxBytes)} ·
 								{workspace.usage.projects} of {workspace.usage.maxProjects} projects
@@ -228,7 +228,7 @@
 							high="85"
 							value={share}
 							aria-label="Storage used in {workspace.kind === 'personal'
-								? 'your projects'
+								? 'your personal workspace'
 								: workspace.name}"
 						></meter>
 					</div>

@@ -1,30 +1,10 @@
-import { fail, redirect } from '@sveltejs/kit';
-import { recordAudit } from '#lib/server/audit.ts';
-import { requireUser } from '#lib/server/http.ts';
-import {
-	createSharedWorkspace,
-	listWorkspaceOverviews,
-	WorkspaceError
-} from '#lib/server/workspaces.ts';
-import type { Actions, PageServerLoad } from './$types';
+import { error, redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async (event) => {
-	const user = requireUser(event);
-	return { workspaces: await listWorkspaceOverviews(user.id) };
-};
-
-export const actions: Actions = {
-	create: async (event) => {
-		const user = requireUser(event);
-		const name = String((await event.request.formData()).get('name') ?? '');
-		let id: string;
-		try {
-			id = await createSharedWorkspace(user.id, name);
-		} catch (cause) {
-			if (cause instanceof WorkspaceError) return fail(400, { name, message: cause.message });
-			throw cause;
-		}
-		await recordAudit(event, 'workspace.created', { subject: name.trim() });
-		redirect(303, `/workspaces/${id}`);
-	}
+/** "Workspaces" opens on the person's own one; the others are a click away in the list. */
+export const load: PageServerLoad = async ({ parent }) => {
+	const { overviews } = await parent();
+	const own = overviews.find((workspace) => workspace.kind === 'personal') ?? overviews[0];
+	if (!own) error(404, 'You are not in any workspace.');
+	redirect(303, `/workspaces/${own.id}`);
 };
