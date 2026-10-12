@@ -80,6 +80,8 @@ export default defineConfig({
 						KERNIC_DATA_DIR: dataDir,
 						KERNIC_SETUP_TOKEN: setupToken,
 						KERNIC_PACKAGE_REGISTRY: `http://127.0.0.1:${registryPort}`,
+						// Small enough for a test to fill, far more than the other tests use.
+						KERNIC_MAX_WORKSPACE_MB: '64',
 						KERNIC_WORKER_URL: `http://127.0.0.1:${workerPort}`,
 						KERNIC_WORKER_TOKEN: workerToken
 					}

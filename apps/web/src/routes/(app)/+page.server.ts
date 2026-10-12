@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { requestCompile } from '#lib/server/compile/jobs.ts';
+import { QueueFullError, requestCompile } from '#lib/server/compile/jobs.ts';
 import { sql } from '#lib/server/db/client.ts';
 import { recordInitialCheckpoint } from '#lib/server/history/history.ts';
 import { requireUser } from '#lib/server/http.ts';
@@ -87,7 +87,12 @@ export const actions: Actions = {
 			user
 		);
 		// Render right away, so the editor and the project's thumbnail have pages to show.
-		await requestCompile({ projectId: project.id, userId: user.id, format: 'svg' });
+		// Best effort: the editor asks again when it opens, should the queue be full now.
+		await requestCompile({ projectId: project.id, userId: user.id, format: 'svg' }).catch(
+			(cause) => {
+				if (!(cause instanceof QueueFullError)) throw cause;
+			}
+		);
 		redirect(303, `/projects/${project.id}`);
 	}
 };

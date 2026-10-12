@@ -80,11 +80,33 @@ Set these in `deploy/.env`, then apply with `docker compose up -d`.
 | `KERNIC_MAX_FILE_MB` | `25` | Largest single file in a project. |
 | `KERNIC_MAX_PROJECT_MB` | `200` | Largest project, and largest ZIP accepted for import. |
 | `KERNIC_MAX_PROJECT_FILES` | `2000` | Most files and folders in a project. |
+| `KERNIC_MAX_WORKSPACE_MB` | `2000` | Most megabytes of project files in one workspace. Each person has a workspace of their own. See "Sharing a server" below. |
+| `KERNIC_MAX_WORKSPACE_PROJECTS` | `200` | Most projects in one workspace. |
+| `KERNIC_MAX_WAITING_COMPILES` | `20` | Most compiles one account may have waiting or running at once. |
 | `KERNIC_WORKER_CPUS` | `2` | CPU limit of the compile worker. |
 | `KERNIC_WORKER_MEMORY` | `4g` | Memory limit of the compile worker. |
 | `KERNIC_COMPILE_TIMEOUT_MS` | `20000` | A compile is stopped after this time. |
 | `KERNIC_WARM_SESSIONS` | `2` | Projects whose compiler stays running between preview compiles. `0` turns this off. See below. |
 | `KERNIC_LANGUAGE_SESSIONS` | `4` | Open editors that get assistance from a language server at once. `0` turns this off. See below. |
+
+### Sharing a server
+
+When several people use one installation, no one of them should be able to take it all.
+
+- **Compiles** are served in turn: when a place becomes free, it goes to the account with the
+  fewest compiles running, and among those to the job that has waited longest. One account can
+  have at most `KERNIC_MAX_WAITING_COMPILES` compiles waiting or running; a further request is
+  refused with a message until some have finished.
+- **Storage:** the files of all projects in a workspace may add up to `KERNIC_MAX_WORKSPACE_MB`,
+  and a workspace may hold `KERNIC_MAX_WORKSPACE_PROJECTS` projects. Growth beyond that is
+  refused with a message that names what is used; making things smaller always works. The
+  version history and the rendered pages of a project are not counted. Everyone sees their own
+  use under **Account**, and administrators see everyone's under **People**.
+- **Editor assistance:** each person can have three editors assisted at once, out of
+  `KERNIC_LANGUAGE_SESSIONS` on the whole server.
+
+To size the disk, multiply `KERNIC_MAX_WORKSPACE_MB` by the number of accounts you expect and
+add room for history, rendered pages and the database.
 
 ### Preview speed and memory
 

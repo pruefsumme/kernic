@@ -37,17 +37,16 @@ Editor assistance from Tinymist is in place (see "Done"). What Tinymist can stil
   compiler's after each save so that nothing is shown twice.
 - Not verified: how much memory and processor time the preview adds per open editor.
 
-### 2. Fair compile queue, and readiness for more than one app process
+### 2. Readiness for more than one app process
 
-No broker needed for this; PostgreSQL covers it.
+The per-project lock, the sign-in attempt counters and the editor-assistance connections live in
+the memory of the one app process. For several app instances behind a load balancer: PostgreSQL
+advisory locks for the project lock, a small table for the counters, and connections that any
+instance can serve. No broker is needed for this. Until then the documentation says "one app
+instance".
 
-- Fairness: the claim query picks the oldest queued job of the account with the fewest running
-  jobs; at most two running compiles per account; a per-account limit on compile requests.
-- More than one process: replace the in-memory project lock with PostgreSQL advisory locks, and
-  the in-memory attempt counters with a small table. Until then the documentation keeps saying
-  "one app instance".
-- BullMQ with Redis stays an option for many workers; it is established, but it is a second
-  service to run and back up, so only when a single worker is not enough.
+BullMQ with Redis stays an option for many compile workers; it is established, but it is a
+second service to run and back up, so only when a single worker is not enough.
 
 ### 3. Package trust
 
@@ -140,6 +139,9 @@ details.
 - Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
   and files, history and the restarted app are examined; leftovers of cut-off saves are
   cleared at startup.
+- Sharing a server fairly: compiles are served to accounts in turn, with a cap on what one
+  account may have waiting; a workspace has a storage limit and a project limit, enforced on
+  saves, uploads, imports and new projects and shown under Account and People.
 - Appearance (Account, Appearance): light, dark or following the system; an accent colour from
   presets or any hue; pages softened in the dark theme. Kept per browser in a cookie and
   rendered by the server, so pages never flash in the other theme. A selection in the editor

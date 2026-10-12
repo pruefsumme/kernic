@@ -1,9 +1,15 @@
 import * as fs from 'node:fs/promises';
-import { projectArtifactsDir, projectDir, projectTreeDir, treeLimits } from '../config';
+import {
+	projectArtifactsDir,
+	projectDir,
+	projectTreeDir,
+	treeLimits,
+	workspaceLimits
+} from '../config';
 import { sql } from '../db/client';
 import { normalizeProjectPath } from './paths';
 import { findTemplate } from './templates';
-import { TreeError, readTreeFile, writeTreeFile } from './tree';
+import { TreeError, readTreeFile, treeUsage, writeTreeFile } from './tree';
 
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
 
@@ -36,6 +42,9 @@ export interface WorkspaceMembership {
 }
 
 export class ProjectInputError extends Error {}
+
+/** The workspace has used what it may of the server's storage, or holds as many projects as it may. */
+export class WorkspaceLimitError extends ProjectInputError {}
 
 interface ProjectRow {
 	id: string;
@@ -148,6 +157,7 @@ export async function createProjectFromTemplate(input: {
 }): Promise<Project> {
 	const template = findTemplate(input.templateId);
 	if (!template) throw new ProjectInputError('Choose one of the available templates.');
+	await assertWorkspaceRoom(input.workspaceId, { projects: 1 });
 
 	const project = await insertProject({
 		workspaceId: input.workspaceId,
@@ -167,6 +177,7 @@ export async function createProjectFromTemplate(input: {
 		await deleteProject(project.id);
 		throw error;
 	}
+	await measureProject(project.id);
 
 	return project;
 }
@@ -214,14 +225,86 @@ export async function setEntryPath(projectId: string, entryPath: unknown): Promi
 	return normalized;
 }
 
-/** Records that the project's files changed. Returns the new revision. */
+/** Records that the project's files changed, and how much they are now. Returns the new revision. */
 export async function bumpRevision(projectId: string): Promise<number> {
+	const usage = await treeUsage(projectTreeDir(projectId));
 	const [row] = await sql<{ revision: number }[]>`
-		UPDATE projects SET revision = revision + 1, updated_at = now()
+		UPDATE projects
+		SET revision = revision + 1, updated_at = now(),
+			bytes = ${usage.bytes}, file_count = ${usage.entries}, measured_at = now()
 		WHERE id = ${projectId}
 		RETURNING revision
 	`;
 	return row!.revision;
+}
+
+/** Measures a project's files without counting it as a change. */
+export async function measureProject(projectId: string): Promise<void> {
+	const usage = await treeUsage(projectTreeDir(projectId));
+	await sql`
+		UPDATE projects
+		SET bytes = ${usage.bytes}, file_count = ${usage.entries}, measured_at = now()
+		WHERE id = ${projectId}
+	`;
+}
+
+/** Measures the projects that have no size on record yet: those from before sizes were kept. */
+export async function measureUnmeasuredProjects(): Promise<number> {
+	const rows = await sql<{ id: string }[]>`SELECT id FROM projects WHERE measured_at IS NULL`;
+	for (const { id } of rows) await measureProject(id);
+	return rows.length;
+}
+
+export interface WorkspaceUsage {
+	bytes: number;
+	projects: number;
+	maxBytes: number;
+	maxProjects: number;
+}
+
+/** What a workspace uses of what it may use. Counts project files; history and renders are extra. */
+export async function workspaceUsage(workspaceId: string): Promise<WorkspaceUsage> {
+	const [row] = await sql<{ bytes: number; projects: number }[]>`
+		SELECT coalesce(sum(bytes), 0)::bigint AS bytes, count(*)::int AS projects
+		FROM projects WHERE workspace_id = ${workspaceId}
+	`;
+	return { bytes: row!.bytes, projects: row!.projects, ...workspaceLimits };
+}
+
+const megabytes = (bytes: number) =>
+	bytes >= 1024 ** 3
+		? `${(bytes / 1024 ** 3).toFixed(1).replace(/\.0$/, '')} GB`
+		: `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+
+/**
+ * Says why something does not fit into a workspace any more, or null if it does.
+ * Shrinking and staying the same size always fit.
+ */
+export function roomProblem(
+	usage: WorkspaceUsage,
+	added: { bytes?: number; projects?: number }
+): string | null {
+	const projects = added.projects ?? 0;
+	const bytes = added.bytes ?? 0;
+	if (projects > 0 && usage.projects + projects > usage.maxProjects) {
+		return `This workspace already has ${usage.projects} projects, which is as many as this server allows. Delete one you no longer need first.`;
+	}
+	if (bytes > 0 && usage.bytes + bytes > usage.maxBytes) {
+		return `This workspace has used its storage on this server (${megabytes(usage.bytes)} of ${megabytes(usage.maxBytes)}). Delete files or projects you no longer need, or ask the administrator for more.`;
+	}
+	return null;
+}
+
+/**
+ * Refuses growth beyond what the workspace may hold. Call before adding bytes
+ * to a project or a project to the workspace.
+ */
+export async function assertWorkspaceRoom(
+	workspaceId: string,
+	added: { bytes?: number; projects?: number }
+): Promise<void> {
+	const problem = roomProblem(await workspaceUsage(workspaceId), added);
+	if (problem) throw new WorkspaceLimitError(problem);
 }
 
 export async function deleteProject(projectId: string): Promise<void> {

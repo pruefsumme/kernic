@@ -4,7 +4,12 @@ import { snapshotBeforeChange } from '#lib/server/history/history.ts';
 import { requireProject } from '#lib/server/http.ts';
 import { InvalidPathError, normalizeProjectPath } from '#lib/server/projects/paths.ts';
 import { withProjectLock } from '#lib/server/projects/lock.ts';
-import { bumpRevision } from '#lib/server/projects/projects.ts';
+import {
+	assertWorkspaceRoom,
+	bumpRevision,
+	measureProject,
+	WorkspaceLimitError
+} from '#lib/server/projects/projects.ts';
 import { TreeError, writeTreeFile } from '#lib/server/projects/tree.ts';
 import type { RequestHandler } from './$types';
 
@@ -41,14 +46,19 @@ export const POST: RequestHandler = async (event) => {
 			if (file.size > treeLimits.maxFileBytes) {
 				throw new TreeError('file-too-large', 'The file is larger than this server allows.');
 			}
+			await assertWorkspaceRoom(project.workspaceId, { bytes: file.size });
 			const content = new Uint8Array(await file.arrayBuffer());
 			await withProjectLock(project.id, async () => {
 				await snapshotBeforeChange(project.id);
 				await writeTreeFile(root, target, content, { limits: treeLimits, baseHash: null });
 			});
 			results.push({ name: file.name, path: target, stored: true });
+			// So that the next file of this upload is checked against what is there now.
+			await measureProject(project.id);
 		} catch (cause) {
-			if (cause instanceof TreeError || cause instanceof InvalidPathError) {
+			if (cause instanceof WorkspaceLimitError) {
+				results.push({ name: file.name, stored: false, message: cause.message });
+			} else if (cause instanceof TreeError || cause instanceof InvalidPathError) {
 				const message =
 					cause instanceof TreeError && cause.code === 'conflict'
 						? 'A file with this name already exists. Rename or delete it first.'

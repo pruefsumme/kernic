@@ -15,6 +15,7 @@ import { dataDir } from '#lib/server/config.ts';
 import { sql } from '#lib/server/db/client.ts';
 import { bundledMigrations, migrate } from '#lib/server/db/migrate.ts';
 import { startImportCleanup } from '#lib/server/imports/imports.ts';
+import { measureUnmeasuredProjects } from '#lib/server/projects/projects.ts';
 import { removeInterruptedWrites } from '#lib/server/projects/tree.ts';
 
 export const init: ServerInit = async () => {
@@ -35,6 +36,10 @@ export const init: ServerInit = async () => {
 	}
 	await deleteExpiredSessions();
 	await prepareSetup();
+	// Projects from before sizes were kept are measured once, without holding up the start.
+	void measureUnmeasuredProjects().catch((error) =>
+		console.error('could not measure project sizes', error)
+	);
 	await startJobDispatcher();
 	await startImportCleanup();
 };

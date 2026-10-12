@@ -81,5 +81,17 @@ export const variables = defineEnvVars({
 	KERNIC_MAX_PROJECT_FILES: {
 		description: 'Largest number of files in one project',
 		schema: count('KERNIC_MAX_PROJECT_FILES', 2000)
+	},
+	KERNIC_MAX_WORKSPACE_MB: {
+		description: 'Largest total size of the projects in one workspace',
+		schema: megabytes('KERNIC_MAX_WORKSPACE_MB', 2000)
+	},
+	KERNIC_MAX_WORKSPACE_PROJECTS: {
+		description: 'Largest number of projects in one workspace',
+		schema: count('KERNIC_MAX_WORKSPACE_PROJECTS', 200)
+	},
+	KERNIC_MAX_WAITING_COMPILES: {
+		description: 'Most compiles one account may have waiting or running at the same time',
+		schema: count('KERNIC_MAX_WAITING_COMPILES', 20)
 	}
 });

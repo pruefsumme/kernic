@@ -200,6 +200,11 @@ signed-in user's files, and everything fetched from outside (packages).
     (found by the kill test: a few per hundred kills). They are now removed when the app starts.
 16. The development server opened a new database pool on every reload of server code until
     PostgreSQL refused connections. Reloads share one pool now; production was not affected.
+17. The compile queue was first come, first served, and nothing bounded what a workspace could
+    store beyond the limit per project, so one account could hold up or fill a shared server.
+    Compiles are now served to accounts in turn, with a cap on what one account may have
+    waiting; a workspace has a storage and a project limit, shown to its people and to
+    administrators.
 
 ## Open
 
@@ -210,11 +215,10 @@ each is in the [backlog](backlog.md).
    checksums to verify against. Each version is fetched once and its SHA-256 is logged.
 2. **Single process.** Rate limits, the per-project lock and editor-assistance connections live
    in memory; running several app instances is not supported.
-3. **No fairness in the compile queue.** One account can queue compiles for many projects.
-4. **Not yet exercised:** a real domain with an automatic certificate, the test suites on ARM64
+3. **Not yet exercised:** a real domain with an automatic certificate, the test suites on ARM64
    hardware (the pipeline only builds the ARM64 images), an upgrade between two released
    versions, power loss during a save.
-5. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
+4. **Unexplained:** one end-to-end run had every test after a history test fail quickly, as if
     the app had stopped. It did not recur in ten further runs or under the stress test, and its
     logs were not kept. Server output of test runs is now kept so that a recurrence can be read.
 

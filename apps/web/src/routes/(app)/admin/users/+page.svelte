@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
-	import { formatExact, formatWhen } from '#lib/format.ts';
+	import { formatBytes, formatExact, formatWhen } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
@@ -96,6 +96,9 @@
 								{:else}
 									not signed in
 								{/if}
+								· {user.projects === 1 ? '1 project' : `${user.projects} projects`}, {formatBytes(
+									user.storageBytes
+								)}
 							</span>
 						</div>
 						<div class="actions">
