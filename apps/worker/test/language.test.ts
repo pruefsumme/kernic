@@ -25,6 +25,9 @@ const hasTinymist = (() => {
 	}
 })();
 
+// Skipping is for machines without Tinymist; a pipeline has to have it.
+if (!hasTinymist && process.env.CI) throw new Error('Tinymist is not installed on this runner.');
+
 /** A minimal editor: starts a language server and speaks the protocol with it over the worker. */
 class Editor {
 	readonly received: Message[] = [];
