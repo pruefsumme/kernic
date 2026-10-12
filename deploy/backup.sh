@@ -96,7 +96,13 @@ rm -rf "$base"/.partial-* # what a run that was killed left behind; the lock is 
 running postgres || die 1 "The database is not running. Start Kernic first:  docker compose up -d"
 
 say "Looking at what is installed..."
-version="$(release_file version.txt | tr -d '\r\n' || true)"
+# The version that made this data: the running app's. (The image that docker compose would start
+# now can be a newer one, built for an upgrade that has not happened yet.)
+if running app; then
+	version="$(docker compose exec -T app cat /app/release/version.txt 2>/dev/null | tr -d '\r\n' || true)"
+else
+	version="$(release_file version.txt | tr -d '\r\n' || true)"
+fi
 migrations="$(sql 'SELECT name FROM schema_migrations ORDER BY name' 2>/dev/null | tr '\n' ',' | sed 's/,$//' || true)"
 database_version="$(sql 'SHOW server_version' 2>/dev/null || true)"
 app_container="$(docker compose ps -aq app 2>/dev/null | head -n 1)"

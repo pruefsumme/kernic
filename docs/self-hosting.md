@@ -368,21 +368,57 @@ the app again. Test it on your own machine once before you rely on it.
 
 ## Upgrade
 
+New versions are announced as [releases](https://github.com/pruefsumme/kernic/releases) on GitHub
+(subscribe to its feed, or watch the repository for releases). What changed, and **what you have to
+do**, is in [CHANGELOG.md](../CHANGELOG.md), under "Upgrade notes" of every version you skip.
+
 ```sh
 cd deploy
-./backup.sh /path/to/backups       # always back up first
-git pull                           # or: git fetch --tags && git checkout v<version>
-docker compose up -d --build
+git fetch --tags && git checkout v<version>     # the new files (a detached HEAD is normal here)
+# with published images, also set the same <version> in KERNIC_APP_IMAGE and KERNIC_WORKER_IMAGE in .env
+./upgrade.sh
 ```
 
-With published images, set the new version in `KERNIC_APP_IMAGE` and `KERNIC_WORKER_IMAGE`, then
-`docker compose pull && docker compose up -d --no-build`. What changed in each version is in
-[CHANGELOG.md](../CHANGELOG.md).
+`upgrade.sh` checks the machine and `.env`, builds or pulls the new app and worker images (nothing
+is stopped yet), shows the version, the database migrations that will be applied and the upgrade
+notes, and asks. Then it makes a backup labelled `pre-upgrade` (and sends it off the machine, if
+that is set up), starts the new version and waits until it is healthy. If that does not work, it
+says how to go back. `./upgrade.sh --yes` skips the question.
 
-Database migrations are applied automatically when the app starts. They only go forward: after
-an upgrade, the database cannot be used with an older version of Kernic. To go back, reinstall
-the older version and restore the backup taken before the upgrade. If a migration fails, the app
-stops with an error instead of starting half-migrated; `docker compose logs app` shows the reason.
+Afterwards: sign in, open a project, see the preview, and look at `docker compose logs app` for
+errors. The backup of before is kept in `deploy/backups`.
+
+Things to know:
+
+- **Update the files together with the images.** An image alone is not an upgrade: `compose.yaml`
+  names the settings the app and worker get, so a new image with an old `compose.yaml` can miss a
+  new setting. That is why you check out the files of the version you run. `upgrade.sh` lists
+  settings that are in `.env.example` but not in your `.env` (their defaults apply).
+- **Keep your own changes out of `compose.yaml` and `Caddyfile`:** put them in
+  `compose.override.yaml` next to them, which Compose reads as well and a checkout never touches.
+  Otherwise `git checkout` refuses to switch, or an upgrade loses them.
+- **Name the version in the image tags** (`:0.2.0`), not `:latest`, so that you know what runs and
+  can go back to it. To follow the newest version of the files, `git checkout main && git pull`
+  (a bare `git pull` does not work after checking out a tag).
+- **The proxy and database images are not upgraded by this.** They are `caddy:2-alpine` and
+  `postgres:18-alpine`; pull them on purpose, after a backup:
+  `docker compose pull proxy postgres && docker compose up -d`. A new major version of PostgreSQL
+  needs a dump and a restore, never an image swap.
+- **Without the script**, the same by hand: `./backup.sh backups`, new files, then
+  `docker compose up -d --build --wait` (or with images: `docker compose pull app worker && docker
+  compose up -d --no-build --wait`).
+
+### Going back
+
+Database migrations are applied automatically when the app starts, in one transaction: if one
+fails the app stops with an error and the database is left as it was (`docker compose logs app`
+says why). They only go forward. An older version **refuses** a database that a newer one has
+changed ("downgrades are not supported") and does not touch it. So:
+
+1. Put the old files and image tags back (`git checkout v<old version>`, the old tags in `.env`).
+2. If the new version never ran, or it applied no migration: `docker compose up -d --wait`.
+3. Otherwise restore the backup of before: `./restore.sh backups/<the pre-upgrade folder>`. What was
+   written after it is lost, which is why `upgrade.sh` makes it just before.
 
 ## Operating
 
