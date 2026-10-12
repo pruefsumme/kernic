@@ -22,7 +22,7 @@ test('a link for reading shows the pages to someone without an account, and noth
 	).pathname;
 	const otherHash = otherPage.split('/').pop()!;
 
-	await page.goto(`/projects/${projectId}/settings`);
+	await page.goto(`/projects/${projectId}/settings?section=sharing`);
 	await page.getByLabel('The link works for').selectOption('7');
 	await page.getByRole('button', { name: 'Create a link for reading' }).click();
 	const field = page.getByRole('textbox', { name: 'Link', exact: true });
@@ -69,7 +69,7 @@ test('a link for reading shows the pages to someone without an account, and noth
 	await expect(visitor.getByRole('img', { name: /^Page \d of 5$/ })).toHaveCount(5);
 
 	// The owner sees that it was opened, and can withdraw it.
-	await page.goto(`/projects/${projectId}/settings`);
+	await page.goto(`/projects/${projectId}/settings?section=sharing`);
 	await expect(page.getByText(/last opened/)).toBeVisible();
 	await page.getByRole('button', { name: 'Withdraw' }).click();
 	await expect(page.getByRole('button', { name: 'Withdraw' })).toHaveCount(0);

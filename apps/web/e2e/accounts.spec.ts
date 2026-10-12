@@ -1,5 +1,5 @@
 import { expect, type Browser, type Page } from '@playwright/test';
-import { test } from './helpers.ts';
+import { openSection, test } from './helpers.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -106,14 +106,17 @@ test('the account page changes name and password and signs other sessions out', 
 	await signIn(phone, person.password);
 	await expect(phone).toHaveURL('/');
 
+	// The page opens on the profile; the other things are a section away.
 	await laptop.goto('/account');
+	await laptop.getByLabel('Your name').fill('Rear Admiral Hopper');
+	await laptop.getByRole('button', { name: 'Save name' }).click();
+	await expect(laptop.getByRole('button', { name: /^Account: Rear Admiral Hopper/ })).toBeVisible();
+
+	await openSection(laptop, 'Sign-in and security');
+	await expect(laptop.getByLabel('Your name')).toHaveCount(0);
 	await expect(laptop.getByText('This session')).toHaveCount(1);
 	// This one, the phone's, and those left by earlier sign-ins on other devices.
 	expect(await laptop.locator('.sessions li').count()).toBeGreaterThanOrEqual(2);
-
-	await laptop.getByLabel('Shown on your checkpoints and to others').fill('Rear Admiral Hopper');
-	await laptop.getByRole('button', { name: 'Save name' }).click();
-	await expect(laptop.getByRole('button', { name: /^Account: Rear Admiral Hopper/ })).toBeVisible();
 
 	// The current password is required.
 	await laptop.getByLabel('Current password').fill('not my password');
@@ -128,7 +131,7 @@ test('the account page changes name and password and signs other sessions out', 
 	await laptop.getByRole('button', { name: 'Change password' }).click();
 	await expect(laptop.getByRole('status')).toContainText('Password changed');
 
-	// This session survives; the other one is gone.
+	// This session survives; the other one is gone. Reloading stays in the section.
 	await laptop.reload();
 	await expect(laptop.locator('.sessions li')).toHaveCount(1);
 	await phone.goto('/');
@@ -159,7 +162,7 @@ test('the look of the app can be chosen and is there from the first byte', async
 	page,
 	baseURL
 }) => {
-	await page.goto('/account');
+	await page.goto('/account?section=appearance');
 	const root = page.locator('html');
 	const surface = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 	const accent = () =>

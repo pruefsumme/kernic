@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import SettingsGroup from './SettingsGroup.svelte';
 	import {
 		ACCENT_PRESETS,
 		applyAppearance,
@@ -43,86 +44,93 @@
 	}
 </script>
 
-<fieldset>
-	<legend>Theme</legend>
-	<div class="themes">
-		{#each themes as option (option.value)}
-			<label class="theme">
-				<input
-					type="radio"
-					name="{id}-theme"
-					value={option.value}
-					checked={theme === option.value}
-					onchange={() => choose({ theme: option.value })}
-				/>
-				<span class="swatch" data-look={option.value} aria-hidden="true">
-					<span></span>
-				</span>
-				<span class="name">{option.label}</span>
-				<span class="hint">{option.hint}</span>
-			</label>
-		{/each}
-	</div>
-	<label class="check">
-		<input
-			type="checkbox"
-			checked={pages === 'dim'}
-			onchange={(event) => choose({ pages: event.currentTarget.checked ? 'dim' : 'white' })}
-		/>
-		<span>
-			Soften pages in the dark theme
-			<small>
-				Rendered pages and thumbnails are shown a little dimmer, so that white paper does not glare.
-				Exported files are not changed.
-			</small>
-		</span>
-	</label>
-</fieldset>
+<SettingsGroup
+	title="Theme"
+	description="Kept in this browser; your other devices keep their own look."
+>
+	<fieldset>
+		<legend class="visually-hidden">Theme</legend>
+		<div class="themes">
+			{#each themes as option (option.value)}
+				<label class="theme">
+					<input
+						type="radio"
+						name="{id}-theme"
+						value={option.value}
+						checked={theme === option.value}
+						onchange={() => choose({ theme: option.value })}
+					/>
+					<span class="swatch" data-look={option.value} aria-hidden="true">
+						<span></span>
+					</span>
+					<span class="name">{option.label}</span>
+					<span class="hint">{option.hint}</span>
+				</label>
+			{/each}
+		</div>
+		<label class="check">
+			<input
+				type="checkbox"
+				checked={pages === 'dim'}
+				onchange={(event) => choose({ pages: event.currentTarget.checked ? 'dim' : 'white' })}
+			/>
+			<span>
+				Soften pages in the dark theme
+				<small>
+					Rendered pages and thumbnails are shown a little dimmer, so that white paper does not
+					glare. Exported files are not changed.
+				</small>
+			</span>
+		</label>
+	</fieldset>
+</SettingsGroup>
 
-<fieldset>
-	<legend>Accent colour</legend>
-	<p class="hint">Used for buttons, links, the active item and the selection.</p>
-	<div class="accents">
-		{#each ACCENT_PRESETS as option (option.hue)}
-			<label class="accent" title={option.name}>
-				<input
-					type="radio"
-					name="{id}-accent"
-					value={option.hue}
-					checked={!custom && hue === option.hue}
-					onchange={() => choose({ hue: option.hue })}
-				/>
-				<span class="dot" style:--h={option.hue} aria-hidden="true"></span>
-				<span class="visually-hidden">{option.name}</span>
-			</label>
-		{/each}
+<SettingsGroup
+	title="Accent colour"
+	description="Used for buttons, links, the active item and the selection."
+>
+	<fieldset>
+		<legend class="visually-hidden">Accent colour</legend>
+		<div class="accents">
+			{#each ACCENT_PRESETS as option (option.hue)}
+				<label class="accent" title={option.name}>
+					<input
+						type="radio"
+						name="{id}-accent"
+						value={option.hue}
+						checked={!custom && hue === option.hue}
+						onchange={() => choose({ hue: option.hue })}
+					/>
+					<span class="dot" style:--h={option.hue} aria-hidden="true"></span>
+					<span class="visually-hidden">{option.name}</span>
+				</label>
+			{/each}
+		</div>
+		<label class="custom" for="{id}-hue">
+			<span>Any other colour</span>
+			<input
+				id="{id}-hue"
+				type="range"
+				min="0"
+				max="359"
+				step="1"
+				value={hue}
+				oninput={(event) => choose({ hue: Number(event.currentTarget.value) }, true)}
+				aria-valuetext={preset && !custom ? preset.name : `Hue ${hue}`}
+			/>
+		</label>
+	</fieldset>
+	<div class="row">
+		<button
+			class="button small"
+			type="button"
+			disabled={isDefault}
+			onclick={() => choose(DEFAULT_APPEARANCE)}
+		>
+			Back to the default
+		</button>
 	</div>
-	<label class="custom" for="{id}-hue">
-		<span>Any other colour</span>
-		<input
-			id="{id}-hue"
-			type="range"
-			min="0"
-			max="359"
-			step="1"
-			value={hue}
-			oninput={(event) => choose({ hue: Number(event.currentTarget.value) }, true)}
-			aria-valuetext={preset && !custom ? preset.name : `Hue ${hue}`}
-		/>
-	</label>
-</fieldset>
-
-<div class="row">
-	<span class="hint">Kept in this browser; other devices keep their own look.</span>
-	<button
-		class="button small"
-		type="button"
-		disabled={isDefault}
-		onclick={() => choose(DEFAULT_APPEARANCE)}
-	>
-		Back to the default
-	</button>
-</div>
+</SettingsGroup>
 
 <style>
 	fieldset {

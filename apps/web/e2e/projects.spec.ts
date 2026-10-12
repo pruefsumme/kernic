@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { createProject, test } from './helpers.ts';
+import { createProject, openSection, test } from './helpers.ts';
 
 test('the dashboard lists, searches and sorts projects', async ({ page }) => {
 	await createProject(page, 'Letter', 'Zebra letter');
@@ -62,6 +62,7 @@ test('settings rename the project, change the main file and delete it', async ({
 	await page.reload();
 	await expect(page.getByLabel('Main file')).toHaveValue('chapters/introduction.typ');
 
+	await openSection(page, 'Backup and deletion');
 	const remove = page.getByRole('button', { name: 'Delete this project' });
 	await expect(remove).toBeDisabled();
 	await page.getByLabel('Type the project name to confirm').fill('Renamed subject');

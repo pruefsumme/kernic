@@ -1,7 +1,7 @@
 import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { recordAudit } from '#lib/server/audit.ts';
 import { requireUser } from '#lib/server/http.ts';
-import { isUuid, workspaceUsage } from '#lib/server/projects/projects.ts';
+import { isUuid, listProjectsForUser, workspaceUsage } from '#lib/server/projects/projects.ts';
 import {
 	createWorkspaceInvite,
 	deleteWorkspace,
@@ -43,6 +43,9 @@ export const load: PageServerLoad = async (event) => {
 		workspace,
 		ownId: user.id,
 		usage: await workspaceUsage(workspace.id),
+		projects: (await listProjectsForUser(user.id))
+			.filter((project) => project.workspaceId === workspace.id)
+			.map(({ id, name, updatedAt }) => ({ id, name, updatedAt })),
 		members: workspace.kind === 'team' ? await listMembers(workspace.id) : [],
 		invites: owner ? await listPendingInvites(workspace.id) : []
 	};

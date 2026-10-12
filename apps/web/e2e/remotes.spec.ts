@@ -14,7 +14,7 @@ import { appendSource, createProject, panel, saveState, test } from './helpers.t
  * talk to, which is the default; there the page has to say so.
  */
 
-const settingsOf = (projectId: string) => `/projects/${projectId}/settings`;
+const settingsOf = (projectId: string) => `/projects/${projectId}/settings?section=git`;
 const repositorySection = (page: Page) =>
 	page.locator('section', { has: page.getByRole('heading', { name: 'Git repository' }) });
 
