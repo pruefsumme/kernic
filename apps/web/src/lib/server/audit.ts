@@ -23,6 +23,8 @@ export type AuditAction =
 	| 'project.restored'
 	| 'project.imported'
 	| 'project.moved'
+	| 'project.share-created'
+	| 'project.share-revoked'
 	| 'workspace.created'
 	| 'workspace.deleted'
 	| 'workspace.invite-created'

@@ -83,19 +83,12 @@ Connect a project to a repository on a forge: push checkpoints, pull and merge c
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 6. Showing a project to someone without an account
-
-A link for one project that lets anyone who has it see the rendered pages of the current
-version, without the source and without changing anything: for a supervisor or a reviewer.
-Hashed tokens as for invitations, revocable, rate-limited, and served like the preview's pages.
-Comments on what is shown would be a feature of its own.
-
-### 7. Real-time collaboration
+### 6. Real-time collaboration
 
 Yjs with the CodeMirror binding and Hocuspocus behind `/collab`; authorization before a document
 is loaded; presence and cursors; connections closed when access is withdrawn.
 
-### 8. Operations
+### 7. Operations
 
 Optional S3-compatible storage, structured logs with request ids, quotas per workspace, health
 details.
@@ -106,6 +99,9 @@ details.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Replace across all files of a project (search across them exists).
 - Project folders on the dashboard, and a filter by workspace.
+- Review comments on a shared document, for readers with a link and for members.
+- A PDF download for readers with a link (needs a bound on what anonymous readers can make the
+  server compile).
 - Accounts: make another person an administrator; change one's email address; single sign-on
   against Gitea/Forgejo or another provider with `openid-client`.
 - Polish, second round: optimistic file-tree updates, a skeleton for the first render of a
@@ -140,6 +136,9 @@ details.
 - Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
   and files, history and the restarted app are examined; leftovers of cut-off saves are
   cleared at startup.
+- Links for reading: an owner creates a link that shows a project's rendered pages to anyone
+  who has it, without an account; with an optional end date, a record of when it was last
+  opened, and a way to withdraw it.
 - Shared workspaces: created by anyone, joined through single-use links in a role (viewer,
   editor, owner), with a members page to change roles, remove people, leave, rename and delete;
   a project moves between workspaces from its settings.

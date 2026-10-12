@@ -11,6 +11,13 @@ import {
 	setEntryPath
 } from '#lib/server/projects/projects.ts';
 import { listTree } from '#lib/server/projects/tree.ts';
+import {
+	createProjectShare,
+	listProjectShares,
+	revokeProjectShare,
+	SHARE_LIFETIMES_DAYS,
+	ShareError
+} from '#lib/server/shares.ts';
 import { listWorkspaceOverviews, moveProject, WorkspaceError } from '#lib/server/workspaces.ts';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -27,6 +34,9 @@ export const load: PageServerLoad = async (event) => {
 			id: project.workspaceId,
 			name: name(workspaces.find((workspace) => workspace.id === project.workspaceId)!)
 		},
+		// Links for reading are an owner's to make and to see.
+		shares: role === 'owner' ? await listProjectShares(project.id) : [],
+		shareLifetimes: [...SHARE_LIFETIMES_DAYS],
 		// Where the project could go: workspaces in which this person may create projects.
 		moveTargets: workspaces
 			.filter((workspace) => workspace.id !== project.workspaceId && canWrite(workspace.role))
@@ -66,6 +76,49 @@ export const actions: Actions = {
 			throw error;
 		}
 		return { action: 'entry', saved: true };
+	},
+
+	/** Creates a link for reading. It is returned once and not stored in readable form. */
+	share: async (event) => {
+		const { project, role, user } = await requireProject(event, 'write');
+		if (role !== 'owner') {
+			return fail(403, {
+				action: 'share',
+				message: 'Only workspace owners can share a project outside the workspace.'
+			});
+		}
+		const chosen = String((await event.request.formData()).get('lifetime') ?? '');
+		const days = chosen === 'none' ? null : Number(chosen);
+		if (days !== null && !SHARE_LIFETIMES_DAYS.some((offered) => offered === days)) {
+			return fail(400, { action: 'share', message: 'Choose how long the link should work.' });
+		}
+		try {
+			const { token, expiresAt } = await createProjectShare({
+				projectId: project.id,
+				createdBy: user.id,
+				days
+			});
+			await recordAudit(event, 'project.share-created', { subject: project.name });
+			return { action: 'share', link: { url: `${event.url.origin}/shared/${token}`, expiresAt } };
+		} catch (error) {
+			if (error instanceof ShareError)
+				return fail(400, { action: 'share', message: error.message });
+			throw error;
+		}
+	},
+
+	unshare: async (event) => {
+		const { project, role } = await requireProject(event, 'write');
+		if (role !== 'owner') {
+			return fail(403, {
+				action: 'unshare',
+				message: 'Only workspace owners can withdraw a link.'
+			});
+		}
+		const shareId = String((await event.request.formData()).get('shareId') ?? '');
+		await revokeProjectShare(project.id, shareId);
+		await recordAudit(event, 'project.share-revoked', { subject: project.name });
+		return { action: 'unshare' };
 	},
 
 	move: async (event) => {

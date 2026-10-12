@@ -43,6 +43,15 @@ signed-in user's files, and everything fetched from outside (packages).
   be withdrawn; an editor cannot manage members; the last owner cannot leave; a removed member
   loses the project and the workspace on their next request.
 
+- Links for reading show a project's rendered pages to anyone who has the link, without an
+  account. Such a link is a long random value of which only a hash is stored; an owner makes
+  it, sees when it was last opened, and can withdraw it; it may carry an end date. Through it
+  only the pages of that project's renders can be fetched, as inert images. **Tested** without
+  an account (`e2e/sharing.spec.ts`): the pages show; the project's files, archive and editor
+  do not; a page of another project is not served through the link; a changed document shows
+  on reload; a withdrawn link shows nothing and its page addresses stop working; an editor
+  cannot create one.
+
 ### Sign-in and sessions
 
 - Passwords: scrypt (N=2^15, r=8, p=3), salted, parameters stored with the hash. Minimum length
