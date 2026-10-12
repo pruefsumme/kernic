@@ -13,6 +13,11 @@ RUN pnpm install --frozen-lockfile
 
 COPY apps/web apps/web
 RUN pnpm --filter @kernic/web build
+# What this image is, for the scripts around it (backup, restore, upgrade): its version and
+# the database migrations it carries. They can read this without starting the app.
+RUN mkdir /release \
+	&& node -p "require('./apps/web/package.json').version" > /release/version.txt \
+	&& ls apps/web/src/lib/server/db/migrations | sed -n 's/\.sql$//p' | LC_ALL=C sort > /release/migrations.txt
 # Production dependencies only (the build bundles everything else).
 RUN pnpm --filter @kernic/web deploy --legacy --prod /out
 
@@ -27,6 +32,7 @@ WORKDIR /app
 COPY --from=build /out/package.json ./
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /repo/apps/web/build ./build
+COPY --from=build /release ./release
 RUN mkdir /data && chown node:node /data
 
 # The app is meant to sit behind the reverse proxy from deploy/compose.yaml,

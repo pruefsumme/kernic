@@ -258,7 +258,11 @@ connections and hold other people's credentials, so:
   serialized. **Tested** with about 2,200 saves, 190 compiles and 350 restores running at once:
   no server errors, no crash.
 - Backup and restore: scripts provided; a full destroy-and-restore drill was done (see
-  `self-hosting.md`).
+  `self-hosting.md`). The pipeline backs up, damages, restores and wipes a running installation
+  on every change and compares accounts, projects, migrations and every project file; it also
+  checks that a killed backup starts the app again and that two runs cannot overlap. Backup
+  folders are private to their owner but **not encrypted**: whoever can read one has the
+  password hashes, the encrypted Git tokens and every project. Keep them where only you can.
 - Upgrades: migrations run in one transaction under a lock. **Tested** against PostgreSQL: a
   failing migration leaves the database unchanged, edited migrations and databases from a newer
   version are refused, two instances starting together apply each migration once. The built app

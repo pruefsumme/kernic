@@ -1,5 +1,22 @@
 # Changes
 
+## Unreleased
+
+**Backup and restore**
+- `backup.sh` stops the app only while it copies, and always starts it again, also when it is
+  interrupted; only one backup or restore runs at a time; the folder appears complete or not at
+  all, with a `manifest.txt`; files are private to their owner; old dated folders are removed
+  (`KERNIC_BACKUP_KEEP_LOCAL`, default 7).
+- `restore.sh` checks a backup against its manifest, refuses one from a newer Kernic, saves the
+  current state first (`pre-restore`) and says how to go back if it stops halfway.
+- The pipeline backs up, damages and restores a running installation on every change.
+
+**Upgrade notes**
+- The backup folder holds `projects.tar` (not compressed) instead of `projects.tar.gz`, and is
+  bigger as a result. Backups of the older kind can still be restored.
+- `backup.sh` now removes dated folders beyond the newest 7 in the backup directory it is given.
+  Set `KERNIC_BACKUP_KEEP_LOCAL=0` in `deploy/.env` to keep everything as before.
+
 ## 0.1.0
 
 The first release. Kernic is a self-hosted workspace for writing Typst documents in the

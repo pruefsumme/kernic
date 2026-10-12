@@ -72,6 +72,8 @@ jobs:
         run: pnpm check
       - name: Formatting and lint
         run: pnpm lint
+      - name: Shell scripts
+        run: shellcheck -S warning -x -s sh deploy/*.sh scripts/*.sh
       - name: Unit tests
         run: pnpm test
 
@@ -165,6 +167,11 @@ jobs:
         env:
           KERNIC_E2E_BASE_URL: http://localhost:8088
           KERNIC_E2E_SETUP_TOKEN: ci-setup-token
+
+      # After the browser tests, so that there is something to back up. Replaces the data of
+      # this stack, which is thrown away with the runner.
+      - name: Backup and restore
+        run: scripts/backup-roundtrip.sh --replace-everything
 
       - name: Show the logs of a failed run
         if: failure()
