@@ -73,13 +73,13 @@ verify any either. Authenticity rests on HTTPS to the registry.
 ### 4. Checks not yet exercised
 
 - An upgrade test in the pipeline: start the previous release's images with data, upgrade, and
-  run the suite. It needs a first released version to upgrade from.
-- Publishing images from the pipeline (a registry and tags per release), once there is a
-  licence and a first version.
+  run the suite. It needs an earlier release to upgrade from, so it can be written once 0.1.0
+  is out and run for 0.2.0.
+- Publishing images: done for tags (see "Done"); the first publication is the proof.
 - ARM64: the images are built under emulation for tags and on request; the test suites have
   not run on ARM64 hardware.
-- A failed migration: start the app against a database where a migration fails half-way and
-  check that it stops without leaving the schema half-changed.
+- A failed migration at the level of the whole app: unit tests show that a failing migration
+  leaves the database untouched, but the app has not been started against such a database.
 - A real domain with an automatic certificate, once there is a host to try it on.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
@@ -191,6 +191,10 @@ details.
 - Making a project from a Git repository: fetched into a staging directory, checked and
   compiled once like a ZIP import, confirmed by the person, then created with the repository's
   history and, if a token was given, connected to it.
+- Releases: a tag `vX.Y.Z` that matches the version in the code runs every check, then publishes
+  the app and worker images for x86-64 and ARM64 to the GitHub container registry; the
+  deployment can run them instead of building (`KERNIC_APP_IMAGE`, `KERNIC_WORKER_IMAGE`).
+  `deploy/preflight.sh` checks a machine and its `.env` before the first start.
 - Pulling from a Git repository: fetch, then move forward or merge; a clean merge is applied,
   and for files both sides changed the person chooses a side per file. What comes in is checked
   like an upload before anything is written. Tried against Forgejo 13.0.5 and Git 2.39 (the

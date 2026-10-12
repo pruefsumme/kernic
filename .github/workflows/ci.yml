@@ -41,6 +41,17 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag names the version in the code
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          for manifest in apps/web/package.json apps/worker/package.json; do
+            test "$(node -p "require('./$manifest').version")" = "$version"
+          done
+          test "$GITHUB_REF_NAME" = "v$version" || {
+            echo "The tag $GITHUB_REF_NAME does not match the version $version in the code."
+            exit 1
+          }
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -187,3 +198,59 @@ jobs:
           docker run --rm --platform linux/arm64 kernic-worker:arm64 typst --version
           docker run --rm --platform linux/arm64 kernic-worker:arm64 tinymist --version
           docker run --rm --platform linux/arm64 kernic-app:arm64 node --version
+
+  publish:
+    # Only for a release: the images people run, for x86-64 and ARM64, once everything else passed.
+    name: Publish images
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, deployment, arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Work out the image names
+        id: names
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          version="${GITHUB_REF_NAME#v}"
+          echo "app=ghcr.io/$owner/kernic-app" >> "$GITHUB_OUTPUT"
+          echo "worker=ghcr.io/$owner/kernic-worker" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A pre-release (0.2.0-rc1) does not become "latest".
+          case "$version" in *-*) echo "latest=false" >> "$GITHUB_OUTPUT" ;; *) echo "latest=true" >> "$GITHUB_OUTPUT" ;; esac
+      - name: Publish the app image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.names.outputs.app }}:${{ steps.names.outputs.version }}
+            ${{ steps.names.outputs.latest == 'true' && format('{0}:latest', steps.names.outputs.app) || '' }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+      - name: Publish the worker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.names.outputs.worker }}:${{ steps.names.outputs.version }}
+            ${{ steps.names.outputs.latest == 'true' && format('{0}:latest', steps.names.outputs.worker) || '' }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
