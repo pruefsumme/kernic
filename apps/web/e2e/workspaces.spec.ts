@@ -113,6 +113,13 @@ test('roles decide what a member may do, and removal ends access at once', async
 	await expect(page.getByLabel(`Role of ${colleague.name}`)).toHaveValue('editor');
 	await expect.poll(async () => (await saveAs(theirs, 'An editor writes.')).status()).toBe(200);
 
+	// Showing the project to people outside the workspace is an owner's decision.
+	const sharing = await theirs.request.post(`/projects/${projectId}/settings?/share`, {
+		headers: { origin: baseURL },
+		form: { lifetime: '7' }
+	});
+	expect(sharing.status()).toBe(403);
+
 	// Both see the same file; the owner's editor shows the colleague's text.
 	await page.goto(`/projects/${projectId}?file=shared-note.typ`);
 	await expect(page.locator('.cm-content')).toContainText('An editor writes.');

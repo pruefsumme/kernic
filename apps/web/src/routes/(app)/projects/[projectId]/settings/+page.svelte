@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatExact, formatWhen } from '#lib/format.ts';
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
@@ -11,6 +12,14 @@
 		form?.action === action && 'message' in form ? form.message : null;
 	const savedBy = (action: string) => form?.action === action && 'saved' in form;
 	let confirmName = $state('');
+
+	const link = $derived(form?.action === 'share' && 'link' in form ? form.link : null);
+	let copied = $state(false);
+	async function copy(text: string) {
+		await navigator.clipboard.writeText(text);
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
 </script>
 
 <svelte:head>
@@ -145,6 +154,83 @@
 			{/if}
 		</section>
 
+		{#if data.isOwner}
+			<section>
+				<h2>Share for reading</h2>
+				<p class="help">
+					A link that shows the rendered pages of this project, as they are when the link is opened,
+					to anyone who has it. No account is needed. They cannot see the source or the files and
+					cannot change anything.
+				</p>
+				<form method="POST" action="?/share" use:enhance>
+					<div class="field">
+						<label for="lifetime">The link works for</label>
+						<select class="input" id="lifetime" name="lifetime">
+							{#each data.shareLifetimes as days (days)}
+								<option value={days}>{days === 365 ? 'One year' : `${days} days`}</option>
+							{/each}
+							<option value="none">Until I withdraw it</option>
+						</select>
+					</div>
+					{#if messageFor('share')}<p class="field-error" role="alert">
+							{messageFor('share')}
+						</p>{/if}
+					<div class="row">
+						<button class="button">Create a link for reading</button>
+					</div>
+				</form>
+
+				{#if link}
+					<div class="link" aria-live="polite">
+						<h3>Link for reading</h3>
+						<p class="help">
+							Shown only now.
+							{link.expiresAt
+								? `It works until ${formatExact(link.expiresAt)}.`
+								: 'It works until you withdraw it.'}
+							Anyone who has it can read the document.
+						</p>
+						<div class="copy">
+							<input
+								class="input"
+								readonly
+								value={link.url}
+								aria-label="Link"
+								onfocus={(event) => event.currentTarget.select()}
+							/>
+							<button class="button" type="button" onclick={() => copy(link.url)}>
+								{copied ? 'Copied' : 'Copy link'}
+							</button>
+						</div>
+					</div>
+				{/if}
+
+				{#if data.shares.length > 0}
+					<h3>Links in use</h3>
+					<ul class="shares">
+						{#each data.shares as share (share.id)}
+							<li>
+								<span>
+									Created {formatWhen(share.createdAt)} ·
+									{share.expiresAt ? `works until ${formatExact(share.expiresAt)}` : 'no end date'} ·
+									{share.lastOpenedAt
+										? `last opened ${formatWhen(share.lastOpenedAt)}`
+										: 'not opened yet'}
+								</span>
+								<form method="POST" action="?/unshare" use:enhance>
+									<input type="hidden" name="shareId" value={share.id} />
+									<button class="button small">Withdraw</button>
+								</form>
+							</li>
+						{/each}
+					</ul>
+					{#if messageFor('unshare')}
+						<p class="field-error" role="alert">{messageFor('unshare')}</p>
+					{/if}
+				{/if}
+			</section>
+		{/if}
+
 		<section>
 			<h2>Backup</h2>
 			<p class="help">
@@ -189,6 +275,48 @@
 </AppShell>
 
 <style>
+	h3 {
+		font-size: var(--t-ui);
+		font-weight: 600;
+	}
+
+	.link {
+		display: grid;
+		gap: var(--s-2);
+		padding: var(--s-4);
+		border: 1px solid var(--accent);
+		border-radius: var(--radius);
+		background: var(--accent-soft);
+	}
+
+	.copy {
+		display: flex;
+		gap: var(--s-2);
+	}
+
+	.copy .input {
+		font-size: var(--t-meta);
+	}
+
+	.shares {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--rule);
+	}
+
+	.shares li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--s-2) var(--s-3);
+		padding: var(--s-2) 0;
+		border-bottom: 1px solid var(--rule);
+		color: var(--ink-2);
+		font-size: var(--t-meta);
+	}
+
 	.project-name {
 		overflow: hidden;
 		color: var(--ink);

@@ -88,6 +88,7 @@ Working:
   all project files
 - Shared workspaces: several people on the same projects as viewer, editor or owner, joined
   through invitation links; a fair compile queue and storage limits per workspace
+- Links for reading: show a project's rendered pages to someone without an account
 - Light and dark theme and a choice of accent colour, per browser
 - Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
   restore of any earlier version without losing the current one, ZIP download of a version;
@@ -102,7 +103,7 @@ Not built yet:
 
 - Importing from a Git repository
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
-- A link that shows a project to someone without an account, and review comments
+- Review comments on a shared document
 - Real-time collaboration
 - A preview that follows each keystroke, and jumping between a place on the page and its source
 

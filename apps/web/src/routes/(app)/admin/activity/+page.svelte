@@ -27,6 +27,8 @@
 		'project.restored': 'Restored a version of',
 		'project.imported': 'Imported the project',
 		'project.moved': 'Moved to another workspace the project',
+		'project.share-created': 'Created a link for reading the project',
+		'project.share-revoked': 'Withdrew a link for reading the project',
 		'workspace.created': 'Created the shared workspace',
 		'workspace.deleted': 'Deleted the shared workspace',
 		'workspace.invite-created': 'Created a link to join the workspace',
