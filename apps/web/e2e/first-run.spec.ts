@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { admin, adminStorageState, setupToken } from './environment.ts';
+import { openSignIn, submitSignIn } from './helpers.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -43,26 +44,21 @@ test('setup is closed once an account exists', async ({ page }) => {
 });
 
 test('sign-in rejects a wrong password and accepts the right one', async ({ page }) => {
-	await page.goto('/projects/00000000-0000-0000-0000-000000000000');
+	await openSignIn(page, '/projects/00000000-0000-0000-0000-000000000000');
 	await expect(page).toHaveURL(/\/login\?next=/);
 
-	await page.getByLabel('Email').fill(admin.email);
-	await page.getByLabel('Password').fill('definitely wrong');
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await submitSignIn(page, admin.email, 'definitely wrong');
 	await expect(page.getByRole('alert')).toContainText('Email or password is not correct');
 
-	await page.getByLabel('Password').fill(admin.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await submitSignIn(page, admin.email, admin.password);
 	// `next` leads back to the page that asked for sign-in (which does not exist here).
 	await expect(page).toHaveURL(/\/projects\/0{8}-/);
 	await expect(page.getByRole('heading', { name: 'This page does not exist' })).toBeVisible();
 });
 
 test('signing out ends the session', async ({ page }) => {
-	await page.goto('/login');
-	await page.getByLabel('Email').fill(admin.email);
-	await page.getByLabel('Password').fill(admin.password);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await openSignIn(page);
+	await submitSignIn(page, admin.email, admin.password);
 	await expect(page).toHaveURL('/');
 
 	await page.getByRole('button', { name: /^Account/ }).click();

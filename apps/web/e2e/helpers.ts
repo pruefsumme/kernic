@@ -21,6 +21,30 @@ export const test = base.extend<{ pageProblems: string[] }>({
 	]
 });
 
+/**
+ * Opens a page of the sign-in form and waits until the page is ready to be used.
+ * Typing into a form before the page has taken over can lose what was typed, and
+ * the click on its button with it; that made sign-ins in the tests fail now and then.
+ */
+export async function openSignIn(page: Page, path = '/login'): Promise<void> {
+	await page.goto(path, { waitUntil: 'networkidle' });
+}
+
+/**
+ * Fills in and submits the sign-in form, and returns once the server has answered
+ * (whether it accepted the password or not). Going on earlier can cut the request off.
+ */
+export async function submitSignIn(page: Page, email: string, password: string): Promise<void> {
+	await page.getByLabel('Email').fill(email);
+	await page.getByLabel('Password').fill(password);
+	const answered = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' && new URL(response.url()).pathname === '/login'
+	);
+	await page.getByRole('button', { name: 'Sign in' }).click();
+	await answered;
+}
+
 /** Creates a project from a template through the picker and returns its id. */
 export async function createProject(
 	page: Page,
