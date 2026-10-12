@@ -220,7 +220,7 @@ export async function startLanguageServer(request: {
 	root: string;
 	files: SnapshotFile[];
 	packages: PackageInput[];
-}): Promise<void> {
+}): Promise<{ jump: boolean }> {
 	const body = JSON.stringify({
 		entry: request.entry,
 		files: request.files.map(reference),
@@ -231,7 +231,70 @@ export async function startLanguageServer(request: {
 			files: files.map(reference)
 		}))
 	});
-	await postSnapshot(`/lsp/${request.name}`, body, request);
+	const started = await postSnapshot<{ jump?: boolean }>(`/lsp/${request.name}`, body, request);
+	// Whether the worker can tell which place on a page belongs to which place in the source.
+	return { jump: started.jump === true };
+}
+
+/** A place on a rendered page: the page counted from 1, a point on it in points. */
+export interface PagePosition {
+	page: number;
+	x: number;
+	y: number;
+}
+
+/** A place in a file: a line and a character, counted from 0. */
+export interface SourcePlace {
+	line: number;
+	character: number;
+}
+
+/** A place in the source: a project path and a place in that file. */
+export interface SourcePosition extends SourcePlace {
+	path: string;
+}
+
+async function askLanguageServer<Answer>(
+	name: string,
+	what: 'locate' | 'source',
+	body: object
+): Promise<Answer | null> {
+	const response = await workerFetch(`/lsp/${name}/${what}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (response.status !== 200) {
+		await response.body?.cancel();
+		return null;
+	}
+	return (await response.json()) as Answer;
+}
+
+/** Where on the rendered pages a place in the source ends up. Empty if nowhere, or unknown. */
+export async function locateInPages(
+	name: string,
+	position: SourcePosition,
+	nearby: SourcePlace[] = []
+): Promise<PagePosition[]> {
+	const answer = await askLanguageServer<{ positions: PagePosition[] }>(name, 'locate', {
+		...position,
+		nearby
+	});
+	return answer?.positions ?? [];
+}
+
+/** Which place in the source made what is at a point of a page. Null if nothing, or unknown. */
+export async function sourceOfPoint(
+	name: string,
+	position: PagePosition
+): Promise<SourcePosition | null> {
+	const answer = await askLanguageServer<{ source: SourcePosition | null }>(
+		name,
+		'source',
+		position
+	);
+	return answer?.source ?? null;
 }
 
 /** Passes protocol messages from an editor to its language server. False if it is gone. */

@@ -25,17 +25,24 @@ the item is built.
 
 ## Next
 
-### 1. Preview that follows typing, and jumps between page and source
+### 1. Preview while typing
 
-Editor assistance from Tinymist is in place (see "Done"). What Tinymist can still give:
+Jumps between page and source are in place (see "Done"). What is left of this item:
 
-- Its preview renders incrementally and only what is visible, and knows which place on a page
-  belongs to which place in the source. That would let the preview follow each keystroke and
-  make a click on the page jump to its source, and back. It needs the preview's own protocol
-  passed through the worker with the same care as the language-server protocol.
 - Errors and warnings while typing, from the language server's diagnostics, merged with the
   compiler's after each save so that nothing is shown twice.
-- Not verified: how much memory and processor time the preview adds per open editor.
+- A preview that follows each keystroke. Measured on 12 October 2026: the page changes about
+  0.65 s after a keystroke on a short document, of which 0.4 s is the pause before saving, and
+  about 0.75 s on a 75-page document. Following every keystroke would mean rendering in the
+  browser from the language server's preview data, with a second renderer (typst.ts, WebAssembly)
+  beside the compiler that makes the PDF. Not planned unless people ask for it: the page shown
+  today is exactly what the export contains, and a second renderer is a large dependency.
+- Jumps under bubblewrap. There the language server has a network of its own and the worker
+  cannot reach its preview, so jumps are only offered under Landlock (the Docker image). A
+  developer who runs the worker outside Docker has to switch the mode to try them.
+- Not verified: what the preview for jumps costs with many open editors. On the 75-page
+  document it added about 20 MB of memory to the language server and it renders on each change
+  while it runs; it is stopped two minutes after the last jump.
 
 ### 2. Readiness for more than one app process
 
@@ -164,6 +171,13 @@ details.
   action, by typing a few letters.
 - Files can be dropped anywhere on the editor screen; images dropped or pasted into a Typst
   source are stored beside it and inserted at the cursor. Dropdowns match the other fields.
+- Jumps between page and source: a click on a page opens the place in the source that printed
+  it (a click beside the text means the nearest text), and Ctrl+J or the button above the
+  preview scrolls to the cursor's place on the pages and marks it. A place that prints nothing
+  itself, such as the start of a line or a function call, is answered by the nearest words
+  before it; a heading that is also in the table of contents is shown where the preview already
+  is, and asking again goes on to its next appearance. Answered by the language server's
+  preview, which the worker drives itself; under Landlock and without a sandbox.
 - Faster preview while typing: the worker keeps one `typst watch` per recently edited project
   (same confinement and limits, bounded number, memory and idle time) and falls back to a
   compile from scratch whenever it cannot vouch for a result; pages the app already stores are

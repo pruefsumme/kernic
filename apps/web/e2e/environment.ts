@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -30,3 +31,21 @@ export const admin = {
 };
 
 export const adminStorageState = path.join(import.meta.dirname, '.auth', 'admin.json');
+
+/**
+ * How the worker started for the tests confines compilers. Landlock where this
+ * machine's `setpriv` offers it, as in the Docker image: only then can a place
+ * on a page be traced to its source. Otherwise bubblewrap, the worker's default.
+ * The documents compiled here are the tests' own, so it does not matter that
+ * Landlock alone leaves the network open.
+ */
+export const workerSandbox =
+	process.env.KERNIC_WORKER_SANDBOX ?? (setprivHasLandlock() ? 'landlock' : 'bwrap');
+
+function setprivHasLandlock(): boolean {
+	try {
+		return execFileSync('setpriv', ['--help'], { encoding: 'utf8' }).includes('landlock');
+	} catch {
+		return false;
+	}
+}

@@ -121,6 +121,25 @@ signed-in user's files, and everything fetched from outside (packages).
   (plain, with `..`, percent-encoded) are refused, settings and root sent by the editor are
   ignored, nothing the editor receives contains a path of the worker, and another account
   gets "not found" for a project's assistance routes.
+- Jumps between page and source use the language server's preview, which the editor still
+  cannot start or reach. The worker starts it itself, for the project's main file, on a port
+  of its own loopback interface chosen by the system, connects to it, and asks only two things:
+  where a place of the source is on the pages, and which place of the source is at a point of
+  a page. The renderings the preview sends are dropped unread; its requests to the editor
+  (`window/showDocument`, outline and preview notifications) are answered by the worker and not
+  passed on; the app accepts a project path that is checked like any other, numbers, and at most
+  16 places nearby. The preview runs only while jumps are asked for and is stopped two minutes
+  after the last one. Its port is not published: in the Docker deployment only processes in the
+  worker's container can reach it, which are the worker and the compilers, and a Typst document
+  has no means to open a connection. Jumps are offered under Landlock and without a sandbox;
+  under bubblewrap the server has a network of its own, the port is out of the worker's reach,
+  and the editor is told that jumps are not available. **Tested** in all three modes: both
+  directions across included files, places that print nothing, clicks beside the text,
+  simultaneous questions each getting their own answer, more places than allowed refused, and
+  nothing of it reaching the editor. **Not tested:** what the preview costs on a server with
+  many open editors; on a 75-page document it added about 20 MB to the language server. The
+  worker itself receives each rendering before dropping it, and how large a hostile document
+  can make one has not been measured; the container's memory limit is what bounds it.
 
 ### Uploads, archives, packages
 
@@ -252,7 +271,7 @@ Checked on the pinned compiler, Typst 0.15.1.
 | Fonts | 276 families in the Docker image: Typst's embedded fonts plus Liberation, DejaVu, Noto, Inter, Roboto, Open Sans, Lato, TeX Gyre, Latin Modern, Computer Modern Unicode, STIX, Linux Libertine, EB Garamond, Atkinson Hyperlegible, Fira Code and JetBrains Mono. Other fonts are uploaded into the project or added to the server. Not compared one by one with typst.app's selection. |
 | Long documents | 74 pages with contents, 72 numbered equations, 72 tables and a bibliography: 1.1 s for the first compile and for an export, 0.4 s for each following preview. The preview loads only the pages in view and re-fetches only pages that changed. |
 | Preview | Server-rendered after a pause in typing of 0.4 s; for the 74-page document the pages follow about 0.4 s later (measured, also in Docker). typst.app renders in the browser as you type, which is still faster. |
-| Editor assistance | Tinymist, the language server the Typst editor extensions use: completion of functions, parameters, labels, citations, fonts and packages; documentation on hover; signature help; go to definition across files (F12); find references; rename (F2); formatting (Shift+Alt+F). Also quick open (Ctrl+K) and search in all files. Not there yet: errors as you type (they follow the compile after each save) and jumping between a place on the page and its source. |
+| Editor assistance | Tinymist, the language server the Typst editor extensions use: completion of functions, parameters, labels, citations, fonts and packages; documentation on hover; signature help; go to definition across files (F12); find references; rename (F2); formatting (Shift+Alt+F). Also quick open (Ctrl+K) and search in all files. Jumps between page and source: a click on a page opens the place in the source that printed it, Ctrl+J shows where the cursor is on the pages. Not there yet: errors as you type (they follow the compile after each save). |
 | Collaboration, comments, sharing links | Not available. |
 | PDF options | Export → "PDF with options": PDF/A-1b, 2b, 2a, 3b, 4 and PDF/UA-1, a selection of pages, and accessibility tags. A document that does not meet the chosen standard is refused with the compiler's reason. Whether a file passes an external validator such as veraPDF has not been checked. |
 | Version history | Explicit checkpoints with diff and restore, plus automatic snapshots at most every ten minutes. |

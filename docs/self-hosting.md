@@ -129,6 +129,11 @@ Typst language server, which is part of the worker image. One runs per open edit
 like a compiler to a copy of that project, and it is stopped ten minutes after the editor last
 used it or when the editor is closed.
 
+A click on a page of the preview opens the place in the source that printed it, and Ctrl+J
+(or the button above the preview) shows where the cursor's place is on the pages. For this the
+worker runs the language server's preview for that editor while jumps are being used, and stops
+it two minutes after the last one. It listens on a port inside the worker's container only.
+
 `KERNIC_LANGUAGE_SESSIONS` bounds how many editors are assisted at the same time; each person
 can have up to three. When all places are taken, a further editor works without assistance and
 says so; a place is given up by an editor that has been quiet for two minutes. Plan about

@@ -1,6 +1,7 @@
 /** Browser-side client for the project API under /api/projects/:id. */
 
 import type { PdfOptions } from '#lib/pdf-options.ts';
+import type { Place } from './jump.ts';
 
 export interface TreeEntry {
 	path: string;
@@ -224,7 +225,7 @@ export function createProjectApi(projectId: string) {
 		},
 
 		/** Opens a connection to a language server, or says why there is none. */
-		async openLanguage(): Promise<{ id: string } | { unavailable: string }> {
+		async openLanguage(): Promise<{ id: string; jump: boolean } | { unavailable: string }> {
 			const response = await fetch(`${base}/lsp`, { method: 'POST' });
 			if (response.status === 503) return response.json();
 			if (!response.ok) throw new ApiError(response.status, 'Editor assistance could not start.');
@@ -240,6 +241,19 @@ export function createProjectApi(projectId: string) {
 				headers: { 'content-type': 'application/json' },
 				body: `{"messages":[${messages.join(',')}]}`
 			});
+		},
+
+		/** Asks where a place in the source is on the pages, or what is at a point of a page. */
+		async jump(
+			connection: string,
+			place:
+				| { path: string; line: number; character: number; nearby?: Place[] }
+				| { page: number; x: number; y: number }
+		): Promise<{
+			positions?: { page: number; x: number; y: number }[];
+			source?: { path: string; line: number; character: number } | null;
+		}> {
+			return (await request(`${base}/lsp/${connection}/jump`, json(place))).json();
 		},
 
 		async refreshLanguage(connection: string): Promise<void> {

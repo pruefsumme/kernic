@@ -43,6 +43,13 @@ pnpm dev                                          # app on http://localhost:5173
 On first start the app prints a **setup token** in its log. Open the app, enter the token and create
 the administrator account. Database migrations run automatically at startup.
 
+Jumps between page and source need the worker to reach the language server's preview on a local
+port. Under `bubblewrap`, the default outside Docker, the language server has a network of its
+own and jumps are not offered. To try them in development, set `KERNIC_WORKER_SANDBOX=landlock`
+in `.env` (Linux 5.13 or later, `setpriv` from util-linux 2.40 or later). Note what that changes:
+Landlock confines files only. In the Docker deployment the worker's container has no way out to
+any network; on your own machine a compile then runs with your machine's network.
+
 Checks:
 
 ```sh
@@ -84,6 +91,8 @@ Working:
 - Autosave with conflict detection: a file changed elsewhere is never overwritten silently
 - Live preview through the sandboxed worker, with compiler errors and warnings linked to the
   source; the compiler stays running between edits, so long documents follow quickly
+- Jumps between page and source: a click on a page opens the place in the source that printed
+  it, and Ctrl+J shows where the cursor's place is on the pages
 - PDF export, optionally to a standard (PDF/A, PDF/UA) or for selected pages, and ZIP download of
   all project files
 - Shared workspaces: several people on the same projects as viewer, editor or owner, joined
@@ -105,7 +114,7 @@ Not built yet:
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
 - Review comments on a shared document
 - Real-time collaboration
-- A preview that follows each keystroke, and jumping between a place on the page and its source
+- A preview that follows each keystroke (it follows a pause in typing of 0.4 s)
 
 ## Licence
 

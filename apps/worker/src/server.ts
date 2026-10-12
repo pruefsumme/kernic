@@ -13,10 +13,11 @@ import {
 	LanguageSessions,
 	LanguageUnavailableError,
 	MAX_MESSAGE_BYTES,
+	MAX_NEARBY_PLACES,
 	parseLanguageRequest,
 	PROJECT_URI
 } from './language.ts';
-import { isSha256 } from './paths.ts';
+import { isSafeRelativePath, isSha256 } from './paths.ts';
 import { detectToolchain, listFontFamilies, type Toolchain } from './sandbox.ts';
 import { WarmSessions } from './sessions.ts';
 
@@ -170,13 +171,61 @@ export async function createWorker(config: WorkerConfig): Promise<Worker> {
 			return;
 		}
 
-		const languageMatch = /^\/lsp\/([A-Za-z0-9_-]{1,64})(\/messages|\/stream)?$/.exec(url.pathname);
+		const languageMatch =
+			/^\/lsp\/([A-Za-z0-9_-]{1,64})(\/messages|\/stream|\/locate|\/source)?$/.exec(url.pathname);
 		if (languageMatch) {
 			const [, name, part] = languageMatch as unknown as [string, string, string | undefined];
 
 			if (request.method === 'POST' && part === undefined) {
 				await language.start(name, parseLanguageRequest(await readJson(request), config.limits));
-				sendJson(response, 200, { ok: true, rootUri: PROJECT_URI });
+				sendJson(response, 200, { ok: true, rootUri: PROJECT_URI, jump: language.canJump });
+				return;
+			}
+			// Where a place in the source is on the pages, and the reverse.
+			if (request.method === 'POST' && (part === '/locate' || part === '/source')) {
+				const body = (await readJson(request)) as Record<string, unknown> | null;
+				const numbers = (...keys: string[]) =>
+					keys.every((key) => typeof body?.[key] === 'number' && Number.isFinite(body[key]));
+				if (part === '/locate') {
+					if (!isSafeRelativePath(body?.path) || !numbers('line', 'character')) {
+						throw new InvalidRequestError('expected a path, a line and a character');
+					}
+					const place = (value: { line: number; character: number }) => ({
+						line: Math.max(0, Math.trunc(value.line)),
+						character: Math.max(0, Math.trunc(value.character))
+					});
+					// Places to fall back on when the place itself prints nothing, nearest first.
+					const nearby = body!.nearby ?? [];
+					if (
+						!Array.isArray(nearby) ||
+						nearby.length > MAX_NEARBY_PLACES ||
+						!nearby.every(
+							(entry) => Number.isFinite(entry?.line) && Number.isFinite(entry?.character)
+						)
+					) {
+						throw new InvalidRequestError(
+							`expected at most ${MAX_NEARBY_PLACES} places nearby, each a line and a character`
+						);
+					}
+					const positions = await language.locate(
+						name,
+						{ path: body!.path as string, ...place(body as never) },
+						nearby.map(place)
+					);
+					if (positions === null) sendJson(response, 404, { error: 'no such language server' });
+					else sendJson(response, 200, { positions });
+				} else {
+					if (!numbers('page', 'x', 'y')) {
+						throw new InvalidRequestError('expected a page and a point on it');
+					}
+					const source = await language.sourceAt(name, {
+						page: Math.max(1, Math.trunc(body!.page as number)),
+						x: body!.x as number,
+						y: body!.y as number
+					});
+					if (source === undefined) sendJson(response, 404, { error: 'no such language server' });
+					else sendJson(response, 200, { source });
+				}
 				return;
 			}
 			if (request.method === 'POST' && part === '/messages') {

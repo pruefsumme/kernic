@@ -10,12 +10,12 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async (event) => {
 	const { project, user } = await requireProject(event, 'read');
 	try {
-		const id = await openLanguageConnection({
+		const { id, jump } = await openLanguageConnection({
 			userId: user.id,
 			projectId: project.id,
 			entryPath: project.entryPath
 		});
-		return Response.json({ id, rootUri: 'file:///project' });
+		return Response.json({ id, rootUri: 'file:///project', jump });
 	} catch (cause) {
 		// Assistance is an extra: the editor carries on without it and says why.
 		if (cause instanceof WorkerRefusedError || cause instanceof WorkerUnavailableError) {

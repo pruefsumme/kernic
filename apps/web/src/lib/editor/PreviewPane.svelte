@@ -4,7 +4,25 @@
 	import PageImage from './PageImage.svelte';
 	import type { EditorSession } from './session.svelte.ts';
 
-	let { session, onshowissues }: { session: EditorSession; onshowissues: () => void } = $props();
+	let {
+		session,
+		onshowissues,
+		onpick = null,
+		onlocate = null
+	}: {
+		session: EditorSession;
+		onshowissues: () => void;
+		/**
+		 * Called with a place on a page that was clicked: the page counted from 1
+		 * and a point on it in points. Null while pages cannot be traced to their source.
+		 */
+		onpick?: ((page: number, x: number, y: number) => void) | null;
+		/** Shows the cursor's place on the pages; null while that cannot be told. */
+		onlocate?: (() => void) | null;
+	} = $props();
+
+	const mod =
+		typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 	const ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2];
 	/** `null` fits the page to the width of the pane. */
@@ -83,6 +101,65 @@
 		}
 	});
 
+	/** A click on a page, as a point in the page's own measure. */
+	function pick(event: MouseEvent, page: { number: number; width: number; height: number }) {
+		// Not when text was being selected or a modifier asked for something else.
+		if (!onpick || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+		const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		if (bounds.width === 0) return;
+		onpick(
+			page.number,
+			((event.clientX - bounds.left) / bounds.width) * page.width,
+			((event.clientY - bounds.top) / bounds.height) * page.height
+		);
+	}
+
+	/** Where the place last asked for is, to mark it on its page for a moment. */
+	let mark = $state<{ index: number; x: number; y: number; key: number } | null>(null);
+	const MARK_MS = 1800;
+	let markTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/** How far down the scrolled pages a place on a page is; null if there is no such page. */
+	function offsetOf(page: number, y: number): number | null {
+		const sheet = canvas?.querySelector<HTMLElement>(`[data-index="${page - 1}"]`);
+		const size = pages[page - 1];
+		if (!canvas || !sheet || !size) return null;
+		const top = sheet.getBoundingClientRect().top - canvas.getBoundingClientRect().top;
+		return canvas.scrollTop + top + (y / size.height) * sheet.offsetHeight;
+	}
+
+	/** Which of several places is nearest to what is on screen now. */
+	export function nearest(places: { page: number; y: number }[]): number {
+		if (!canvas) return 0;
+		const looking = canvas.scrollTop + canvas.clientHeight / 3;
+		let best = 0;
+		let distance = Infinity;
+		for (const [index, place] of places.entries()) {
+			const offset = offsetOf(place.page, place.y);
+			if (offset !== null && Math.abs(offset - looking) < distance) {
+				best = index;
+				distance = Math.abs(offset - looking);
+			}
+		}
+		return best;
+	}
+
+	/** Scrolls to a place on a page (counted from 1, in points) and marks it briefly. */
+	export function show(page: number, x: number, y: number): void {
+		const index = page - 1;
+		const size = pages[index];
+		const offset = offsetOf(page, y);
+		if (!canvas || !size || offset === null) return;
+		canvas.scrollTo({
+			top: Math.max(0, offset - canvas.clientHeight / 3),
+			behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+		});
+		mark = { index, x: (x / size.width) * 100, y: (y / size.height) * 100, key: Date.now() };
+		// Taken away by a timer, not by its animation: with reduced motion there is none.
+		clearTimeout(markTimer);
+		markTimer = setTimeout(() => (mark = null), MARK_MS);
+	}
+
 	const compiling = $derived(session.compile.status === 'compiling');
 	const errorLabel = $derived(
 		session.errorCount === 1 ? '1 error' : `${session.errorCount} errors`
@@ -126,29 +203,46 @@
 			{/if}
 		</div>
 
-		<div class="zoom" role="group" aria-label="Zoom">
-			<button
-				type="button"
-				title="Zoom out"
-				aria-label="Zoom out"
-				disabled={zoom !== null && zoom <= ZOOM_STEPS[0]!}
-				onclick={() => step(-1)}
-			>
-				<Icon name="minus" size={16} />
-			</button>
-			<span class="level">{Math.round((zoom ?? fitScale) * 100)}%</span>
-			<button
-				type="button"
-				title="Zoom in"
-				aria-label="Zoom in"
-				disabled={zoom !== null && zoom >= ZOOM_STEPS.at(-1)!}
-				onclick={() => step(1)}
-			>
-				<Icon name="plus" size={16} />
-			</button>
-			<button type="button" class="fit" aria-pressed={zoom === null} onclick={() => (zoom = null)}>
-				Fit width
-			</button>
+		<div class="tools">
+			{#if onlocate}
+				<button
+					type="button"
+					title="Show the cursor's place on the pages ({mod}J)"
+					aria-label="Show the cursor's place on the pages"
+					onclick={onlocate}
+				>
+					<Icon name="locate" size={16} />
+				</button>
+			{/if}
+			<div class="zoom" role="group" aria-label="Zoom">
+				<button
+					type="button"
+					title="Zoom out"
+					aria-label="Zoom out"
+					disabled={zoom !== null && zoom <= ZOOM_STEPS[0]!}
+					onclick={() => step(-1)}
+				>
+					<Icon name="minus" size={16} />
+				</button>
+				<span class="level">{Math.round((zoom ?? fitScale) * 100)}%</span>
+				<button
+					type="button"
+					title="Zoom in"
+					aria-label="Zoom in"
+					disabled={zoom !== null && zoom >= ZOOM_STEPS.at(-1)!}
+					onclick={() => step(1)}
+				>
+					<Icon name="plus" size={16} />
+				</button>
+				<button
+					type="button"
+					class="fit"
+					aria-pressed={zoom === null}
+					onclick={() => (zoom = null)}
+				>
+					Fit width
+				</button>
+			</div>
 		</div>
 	</header>
 
@@ -166,15 +260,25 @@
 					jump while pages load. A page that did not change keeps its address
 					and is not fetched again.
 				-->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 				<div
 					{@attach watch}
 					{@attach index === 0 ? trackWidth : undefined}
 					class="sheet"
 					class:fit={zoom === null}
+					class:pickable={onpick !== null}
 					data-index={index}
 					style:aspect-ratio="{page.width} / {page.height}"
 					style:width={zoom === null ? undefined : `${page.width * PX_PER_PT * zoom}px`}
+					title={onpick ? 'Click to go to this place in the source' : undefined}
+					onclick={(event) => pick(event, page)}
 				>
+					{#if mark?.index === index}
+						{#key mark.key}
+							<span class="mark" style:left="{mark.x}%" style:top="{mark.y}%" aria-hidden="true"
+							></span>
+						{/key}
+					{/if}
 					{#if shown[index]}
 						<PageImage url={shown[index]} alt="Page {page.number}" />
 					{:else}
@@ -284,6 +388,7 @@
 		}
 	}
 
+	.tools,
 	.zoom {
 		display: flex;
 		align-items: center;
@@ -293,7 +398,11 @@
 		font-size: var(--t-meta);
 	}
 
-	.zoom button {
+	.tools {
+		gap: var(--s-2);
+	}
+
+	.tools button {
 		display: grid;
 		place-items: center;
 		min-width: 1.75rem;
@@ -307,7 +416,7 @@
 		cursor: pointer;
 	}
 
-	.zoom button {
+	.tools button {
 		transition:
 			background-color var(--fast) var(--ease-out),
 			color var(--fast) var(--ease-out);
@@ -318,12 +427,12 @@
 		color: var(--accent);
 	}
 
-	.zoom button:hover:not(:disabled) {
+	.tools button:hover:not(:disabled) {
 		background: var(--sunken);
 		color: var(--ink);
 	}
 
-	.zoom button:disabled {
+	.tools button:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}
@@ -397,6 +506,45 @@
 	/* Zoomed pages wider than the pane start at its left edge so they can be scrolled to. */
 	.canvas:has(.sheet:not(.fit)) {
 		align-items: safe center;
+	}
+
+	.sheet.pickable {
+		cursor: pointer;
+	}
+
+	/* Where the cursor's place in the source is on the page: a ring that closes in and fades. */
+	.mark {
+		position: absolute;
+		z-index: 2;
+		width: 14px;
+		height: 14px;
+		margin: -7px 0 0 -7px;
+		border: 2px solid oklch(60% 0.2 var(--accent-h));
+		border-radius: 50%;
+		background: oklch(60% 0.2 var(--accent-h) / 0.2);
+		pointer-events: none;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.mark {
+			animation: mark-fade 1.8s var(--ease-out) forwards;
+		}
+
+		@keyframes mark-fade {
+			0% {
+				scale: 2.4;
+				opacity: 0;
+			}
+			20%,
+			65% {
+				scale: 1;
+				opacity: 1;
+			}
+			100% {
+				scale: 1;
+				opacity: 0;
+			}
+		}
 	}
 
 	.stale .sheet {
