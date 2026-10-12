@@ -78,8 +78,10 @@ verify any either. Authenticity rests on HTTPS to the registry.
 - Publishing images: done for tags (see "Done"); the first publication is the proof.
 - ARM64: the images are built under emulation for tags and on request; the test suites have
   not run on ARM64 hardware.
-- A failed migration at the level of the whole app: unit tests show that a failing migration
-  leaves the database untouched, but the app has not been started against such a database.
+- A failed migration at the level of the whole app: `pnpm test:migrations` starts the built app
+  against a database from a newer release and one with an edited migration, and checks that it
+  stops with an explanation and changes nothing. A migration whose SQL itself fails is shown
+  only by the unit tests (it leaves the database untouched there).
 - A real domain with an automatic certificate, once there is a host to try it on.
 - The unexplained mass test failure: server output of test runs is now kept in `e2e/.logs/`;
   if it recurs, the cause can be read there.
