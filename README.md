@@ -23,12 +23,15 @@ been checked for security and data safety, and what is still open, is in
 Project files, uploads and the documents built from them are treated as untrusted. The worker has no
 database access and none of the app's secrets. It receives files by content hash (including the
 files of any packages the document imports), compiles with resource limits (`prlimit`) inside a
-`bubblewrap` sandbox without network access, and returns diagnostics and rendered pages.
+sandbox without network access (`bubblewrap` in development, Landlock in the Docker image), and
+returns diagnostics and rendered pages. Editor assistance runs the Tinymist language server under
+the same confinement.
 
 ## Development
 
 Requirements: Node 24+, pnpm, Docker (for PostgreSQL), Git, the
-[Typst CLI](https://github.com/typst/typst) and `bubblewrap` on your `PATH`.
+[Typst CLI](https://github.com/typst/typst) and `bubblewrap` on your `PATH`, and
+[Tinymist](https://github.com/Myriad-Dreamin/tinymist) for editor assistance.
 
 ```sh
 pnpm install
@@ -72,16 +75,23 @@ Working:
 - First-run setup with a setup token, sign in and sign out; accounts by invitation link, an
   account page (password, sessions), administration of people and an activity log
 - Projects from built-in templates (blank, article, report, letter)
-- Multi-file editor: file tree, uploads, rename, delete, Typst syntax highlighting and completion
+- Multi-file editor: file tree, uploads (also by dropping files, and pasting images into the
+  source), rename, delete, Typst syntax highlighting
+- Editor assistance from the Tinymist language server, sandboxed in the worker: completion of
+  functions, labels, citations and fonts, documentation on hover, go to definition, rename,
+  formatting
+- Quick open (Ctrl+K) for files, headings and actions; search in all files of a project
 - Autosave with conflict detection: a file changed elsewhere is never overwritten silently
-- Live preview through the sandboxed worker, with compiler errors and warnings linked to the source
-- PDF export and ZIP download of all project files
+- Live preview through the sandboxed worker, with compiler errors and warnings linked to the
+  source; the compiler stays running between edits, so long documents follow quickly
+- PDF export, optionally to a standard (PDF/A, PDF/UA) or for selected pages, and ZIP download of
+  all project files
+- Light and dark theme and a choice of accent colour, per browser
 - Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
   restore of any earlier version without losing the current one, ZIP download of a version;
   automatic snapshots in between
 - Import from a ZIP archive with a dry run: the archive is unpacked aside, scanned for packages
   and missing files and compiled once; the project is only created after you confirm
-
 - Typst Universe packages: downloaded by the app from the registry, cached, and passed to the
   sandboxed worker, which itself has no network access
 - Docker Compose deployment with an isolated compile worker, and backup and restore scripts
@@ -91,7 +101,8 @@ Not built yet:
 - Importing from a Git repository
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
 - Sharing a workspace between several people, sharing links and review
-- Tinymist language server features, real-time collaboration
+- Real-time collaboration
+- A preview that follows each keystroke, and jumping between a place on the page and its source
 
 ## Licence
 
