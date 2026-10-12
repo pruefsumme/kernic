@@ -2,7 +2,11 @@
 	import { goto } from '$app/navigation';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
+	import {
+		helpDestination,
+		projectsDestination,
+		workspacesDestination
+	} from '#lib/components/rail.ts';
 	import { formatBytes } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
@@ -61,7 +65,10 @@
 	<title>Import · Kernic</title>
 </svelte:head>
 
-<AppShell destinations={[projectsDestination(false)]} footer={[helpDestination]}>
+<AppShell
+	destinations={[projectsDestination(false), workspacesDestination(false)]}
+	footer={[helpDestination]}
+>
 	{#snippet title()}
 		<a class="crumb" href="/">Projects</a>
 		<span class="where">Import</span>

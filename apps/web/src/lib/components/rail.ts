@@ -9,6 +9,14 @@ export const projectsDestination = (active: boolean): RailItem => ({
 	active
 });
 
+export const workspacesDestination = (active: boolean): RailItem => ({
+	id: 'workspaces',
+	label: 'Workspaces',
+	icon: 'people',
+	href: '/workspaces',
+	active
+});
+
 export const helpDestination: RailItem = {
 	id: 'help',
 	label: 'Help',

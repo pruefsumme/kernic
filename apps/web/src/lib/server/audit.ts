@@ -21,7 +21,14 @@ export type AuditAction =
 	| 'account.reset-link-created'
 	| 'project.deleted'
 	| 'project.restored'
-	| 'project.imported';
+	| 'project.imported'
+	| 'project.moved'
+	| 'workspace.created'
+	| 'workspace.deleted'
+	| 'workspace.invite-created'
+	| 'workspace.member-joined'
+	| 'workspace.member-removed'
+	| 'workspace.role-changed';
 
 export interface AuditEvent {
 	id: number;

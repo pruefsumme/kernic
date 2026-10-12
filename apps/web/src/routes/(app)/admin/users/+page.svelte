@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
-	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
+	import {
+		helpDestination,
+		projectsDestination,
+		workspacesDestination
+	} from '#lib/components/rail.ts';
 	import { formatBytes, formatExact, formatWhen } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
@@ -22,7 +26,10 @@
 	<title>People · Kernic</title>
 </svelte:head>
 
-<AppShell destinations={[projectsDestination(false)]} footer={[helpDestination]}>
+<AppShell
+	destinations={[projectsDestination(false), workspacesDestination(false)]}
+	footer={[helpDestination]}
+>
 	{#snippet title()}
 		<span class="where">People</span>
 	{/snippet}

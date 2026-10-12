@@ -11,14 +11,26 @@ import {
 	setEntryPath
 } from '#lib/server/projects/projects.ts';
 import { listTree } from '#lib/server/projects/tree.ts';
+import { listWorkspaceOverviews, moveProject, WorkspaceError } from '#lib/server/workspaces.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
-	const { project, role } = await requireProject(event, 'read');
+	const { project, role, user } = await requireProject(event, 'read');
 	const entries = await listTree(projectTreeDir(project.id));
+	const workspaces = await listWorkspaceOverviews(user.id);
+	const name = (workspace: { kind: string; name: string }) =>
+		workspace.kind === 'personal' ? 'Your projects (only you)' : workspace.name;
 
 	return {
 		project: { id: project.id, name: project.name, entryPath: project.entryPath },
+		workspace: {
+			id: project.workspaceId,
+			name: name(workspaces.find((workspace) => workspace.id === project.workspaceId)!)
+		},
+		// Where the project could go: workspaces in which this person may create projects.
+		moveTargets: workspaces
+			.filter((workspace) => workspace.id !== project.workspaceId && canWrite(workspace.role))
+			.map((workspace) => ({ id: workspace.id, name: name(workspace) })),
 		canWrite: canWrite(role),
 		isOwner: role === 'owner',
 		typstFiles: entries
@@ -54,6 +66,22 @@ export const actions: Actions = {
 			throw error;
 		}
 		return { action: 'entry', saved: true };
+	},
+
+	move: async (event) => {
+		const { project, user } = await requireProject(event, 'write');
+		const targetWorkspaceId = String((await event.request.formData()).get('workspace') ?? '');
+		try {
+			await moveProject({ projectId: project.id, userId: user.id, targetWorkspaceId });
+		} catch (error) {
+			// Covers both "may not" and "no room there".
+			if (error instanceof WorkspaceError || error instanceof ProjectInputError) {
+				return fail(400, { action: 'move', message: error.message });
+			}
+			throw error;
+		}
+		await recordAudit(event, 'project.moved', { subject: project.name });
+		return { action: 'move', saved: true };
 	},
 
 	delete: async (event) => {

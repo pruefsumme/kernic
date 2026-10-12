@@ -83,10 +83,12 @@ Connect a project to a repository on a forge: push checkpoints, pull and merge c
 elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
 hooks, limits on size and time, Git run outside the compile worker.
 
-### 6. Team access
+### 6. Showing a project to someone without an account
 
-Team workspaces in the interface, membership and roles, share links. Accounts and invitations
-exist; what is missing is putting several people into one workspace.
+A link for one project that lets anyone who has it see the rendered pages of the current
+version, without the source and without changing anything: for a supervisor or a reviewer.
+Hashed tokens as for invitations, revocable, rate-limited, and served like the preview's pages.
+Comments on what is shown would be a feature of its own.
 
 ### 7. Real-time collaboration
 
@@ -103,8 +105,7 @@ details.
 - History: restore a single file; compare any two checkpoints.
 - Re-run the import dry-run compile when a different main file is chosen.
 - Replace across all files of a project (search across them exists).
-- Project folders and "move to workspace" on the dashboard.
-- Share dialog (depends on team access).
+- Project folders on the dashboard, and a filter by workspace.
 - Accounts: make another person an administrator; change one's email address; single sign-on
   against Gitea/Forgejo or another provider with `openid-client`.
 - Polish, second round: optimistic file-tree updates, a skeleton for the first render of a
@@ -139,6 +140,9 @@ details.
 - Durability check (`pnpm test:durability`): the app is killed while saving, again and again,
   and files, history and the restarted app are examined; leftovers of cut-off saves are
   cleared at startup.
+- Shared workspaces: created by anyone, joined through single-use links in a role (viewer,
+  editor, owner), with a members page to change roles, remove people, leave, rename and delete;
+  a project moves between workspaces from its settings.
 - Sharing a server fairly: compiles are served to accounts in turn, with a cap on what one
   account may have waiting; a workspace has a storage limit and a project limit, enforced on
   saves, uploads, imports and new projects and shown under Account and People.

@@ -3,8 +3,8 @@
 A self-hosted, Git-first workspace for writing [Typst](https://typst.app/docs/) documents: edit a
 multi-file project in the browser, see the rendered pages next to the source, and export a PDF.
 
-> Early development. The single-user editing loop works and can be self-hosted; Git remotes
-> (Gitea/Forgejo), team sharing and real-time collaboration are not built yet. See
+> Early development. Writing alone or in a shared workspace works and can be self-hosted; Git
+> remotes (Gitea/Forgejo) and real-time collaboration are not built yet. See
 > [Status](#status) and the [backlog](docs/backlog.md).
 
 To run your own installation, see **[docs/self-hosting.md](docs/self-hosting.md)**. What has
@@ -86,6 +86,8 @@ Working:
   source; the compiler stays running between edits, so long documents follow quickly
 - PDF export, optionally to a standard (PDF/A, PDF/UA) or for selected pages, and ZIP download of
   all project files
+- Shared workspaces: several people on the same projects as viewer, editor or owner, joined
+  through invitation links; a fair compile queue and storage limits per workspace
 - Light and dark theme and a choice of accent colour, per browser
 - Version history: checkpoints (Git commits in a repository per project), a diff of what changed,
   restore of any earlier version without losing the current one, ZIP download of a version;
@@ -100,7 +102,7 @@ Not built yet:
 
 - Importing from a Git repository
 - Pushing and pulling checkpoints to a Gitea/Forgejo repository
-- Sharing a workspace between several people, sharing links and review
+- A link that shows a project to someone without an account, and review comments
 - Real-time collaboration
 - A preview that follows each keystroke, and jumping between a place on the page and its source
 
