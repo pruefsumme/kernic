@@ -261,7 +261,9 @@ connections and hold other people's credentials, so:
   `self-hosting.md`).
 - Upgrades: migrations run in one transaction under a lock. **Tested** against PostgreSQL: a
   failing migration leaves the database unchanged, edited migrations and databases from a newer
-  version are refused, two instances starting together apply each migration once.
+  version are refused, two instances starting together apply each migration once. The built app
+  is also started against a newer and an edited database (`pnpm test:migrations`): it stops with
+  an explanation and writes nothing.
 - An unhandled promise rejection is logged instead of stopping the server.
 - Dependencies: `pnpm audit --prod` reports no known vulnerabilities (11 October 2026).
 
