@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import SectionedPage from '#lib/components/SectionedPage.svelte';
+	import { activeSection, type PageSection } from '#lib/components/sections.ts';
+	import SettingsGroup from '#lib/components/SettingsGroup.svelte';
+	import { page } from '$app/state';
 	import {
 		helpDestination,
 		projectsDestination,
@@ -17,6 +22,18 @@
 	const link = $derived(form && 'link' in form ? form.link : null);
 	const failure = $derived(form && 'message' in form ? form : null);
 	const messageFor = (action: string) => (failure?.action === action ? failure.message : null);
+
+	const sections = $derived<PageSection[]>([
+		{ id: 'overview', label: 'Overview', icon: 'grid' },
+		...(shared ? [{ id: 'members', label: 'Members', icon: 'people' } as const] : []),
+		...(owner
+			? [
+					{ id: 'invitations', label: 'Invitations', icon: 'link' } as const,
+					{ id: 'settings', label: 'Settings', icon: 'settings' } as const
+				]
+			: [])
+	]);
+	const active = $derived(activeSection(page.url, sections));
 
 	const roles = [
 		{ value: 'viewer', label: 'Viewer', can: 'Opens and exports projects' },
@@ -45,36 +62,87 @@
 		<span class="where">{heading}</span>
 	{/snippet}
 
-	<div class="page">
-		<div class="head">
-			<div>
-				<h1>{heading}</h1>
-				<p class="lede">
-					{#if shared}
-						Shared workspace · you are {data.workspace.role === 'owner' ? 'an' : 'a'}
-						{data.workspace.role} ·
-					{:else}
-						Only you can reach these projects ·
-					{/if}
-					{data.usage.projects === 1 ? '1 project' : `${data.usage.projects} projects`},
-					{formatBytes(data.usage.bytes)} of {formatBytes(data.usage.maxBytes)}
-				</p>
-			</div>
+	<SectionedPage {heading} {sections} {active}>
+		{#snippet lede()}
+			{#if shared}
+				Shared workspace · you are {data.workspace.role === 'owner' ? 'an' : 'a'}
+				{data.workspace.role}
+			{:else}
+				Only you can reach these projects
+			{/if}
+		{/snippet}
+		{#snippet actions()}
 			<a class="button" href="/workspaces">All workspaces</a>
-		</div>
+		{/snippet}
 
-		{#if !shared}
-			<section>
-				<h2>Working with others</h2>
-				<p class="help">
-					Your own workspace cannot be shared. To work on a project with someone, create a shared
-					workspace and move the project into it from the project's settings.
-				</p>
-				<a class="button" href="/workspaces">Create a shared workspace</a>
-			</section>
-		{:else}
-			<section>
-				<h2>Members</h2>
+		{#if active === 'overview'}
+			<SettingsGroup title="Projects">
+				{#if data.projects.length === 0}
+					<p class="help">
+						No projects here yet. Create one from the dashboard{shared
+							? ', or move one in from its settings'
+							: ''}.
+					</p>
+				{:else}
+					<ul class="people">
+						{#each data.projects as project (project.id)}
+							<li>
+								<a class="project" href="/projects/{project.id}">
+									<Icon name="file" size={18} />
+									<span>{project.name}</span>
+								</a>
+								<span class="meta">
+									changed
+									<time
+										datetime={project.updatedAt.toISOString()}
+										title={formatExact(project.updatedAt)}>{formatWhen(project.updatedAt)}</time
+									>
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+				<div class="row">
+					<a class="button" href="/?new">New project</a>
+				</div>
+			</SettingsGroup>
+
+			<SettingsGroup
+				title="Storage"
+				description="Counts the files of the projects. Their version history and rendered pages are kept in addition."
+			>
+				<div class="usage">
+					<meter
+						min="0"
+						max="100"
+						high="85"
+						value={Math.min(100, (data.usage.bytes / data.usage.maxBytes) * 100)}
+						aria-label="Storage used in {heading}"
+					></meter>
+					<span class="meta">
+						{formatBytes(data.usage.bytes)} of {formatBytes(data.usage.maxBytes)} ·
+						{data.usage.projects} of {data.usage.maxProjects} projects
+					</span>
+				</div>
+			</SettingsGroup>
+
+			{#if !shared}
+				<SettingsGroup
+					title="Working with others"
+					description="Your own workspace cannot be shared. To work on a project with someone, create a shared workspace and move the project into it from the project's settings."
+				>
+					<div class="row">
+						<a class="button" href="/workspaces">Create a shared workspace</a>
+					</div>
+				</SettingsGroup>
+			{/if}
+		{:else if active === 'members'}
+			<SettingsGroup
+				title={data.members.length === 1 ? '1 member' : `${data.members.length} members`}
+				description={owner
+					? 'Change what someone may do, or remove them. To let someone in, create a link under Invitations.'
+					: 'The people who can reach the projects of this workspace.'}
+			>
 				<ul class="people">
 					{#each data.members as member (member.userId)}
 						<li>
@@ -93,7 +161,7 @@
 							</div>
 							<div class="actions">
 								{#if owner}
-									<form method="POST" action="?/role" use:enhance>
+									<form method="POST" action="?/role&section=members" use:enhance>
 										<input type="hidden" name="userId" value={member.userId} />
 										<select
 											class="select"
@@ -112,7 +180,7 @@
 									<span class="tag">{roleName(member.role)}</span>
 								{/if}
 								{#if owner || member.userId === data.ownId}
-									<form method="POST" action="?/remove" use:enhance>
+									<form method="POST" action="?/remove&section=members" use:enhance>
 										<input type="hidden" name="userId" value={member.userId} />
 										<button
 											class="button small danger"
@@ -139,172 +207,119 @@
 						</div>
 					{/each}
 				</dl>
-			</section>
-
-			{#if owner}
-				<section>
-					<h2>Let someone in</h2>
-					<p class="help">
-						Creates a link for one person who has an account on this server. They open it, confirm,
-						and are a member. Kernic does not send email: copy the link and pass it on yourself. It
-						works once and for 7 days.
-					</p>
-					<form method="POST" action="?/invite" use:enhance>
-						<div class="field">
-							<label for="invite-role">They join as</label>
-							<select class="input" id="invite-role" name="role">
-								<option value="editor">Editor · changes, creates and imports projects</option>
-								<option value="viewer">Viewer · opens and exports projects</option>
-							</select>
-						</div>
-						{#if messageFor('invite')}
-							<p class="form-error" role="alert">{messageFor('invite')}</p>
-						{/if}
-						<button class="button primary">Create a link</button>
-					</form>
-
-					{#if link}
-						<div class="link" aria-live="polite">
-							<h3>Link to join as {link.role}</h3>
-							<p class="help">
-								Shown only now. Valid until {formatExact(link.expiresAt)}. Whoever opens it first
-								with an account joins, so send it privately.
-							</p>
-							<div class="copy">
-								<input
-									class="input"
-									readonly
-									value={link.url}
-									aria-label="Link"
-									onfocus={(event) => event.currentTarget.select()}
-								/>
-								<button class="button" type="button" onclick={() => copy(link.url)}>
-									{copied ? 'Copied' : 'Copy link'}
-								</button>
-							</div>
-						</div>
+			</SettingsGroup>
+		{:else if active === 'invitations'}
+			<SettingsGroup
+				title="Let someone in"
+				description="Creates a link for one person who has an account on this server. They open it, confirm, and are a member. Kernic does not send email: copy the link and pass it on yourself. It works once and for 7 days."
+			>
+				<form method="POST" action="?/invite&section=invitations" use:enhance>
+					<div class="field">
+						<label for="invite-role">They join as</label>
+						<select class="input" id="invite-role" name="role">
+							<option value="editor">Editor · changes, creates and imports projects</option>
+							<option value="viewer">Viewer · opens and exports projects</option>
+						</select>
+					</div>
+					{#if messageFor('invite')}
+						<p class="form-error" role="alert">{messageFor('invite')}</p>
 					{/if}
+					<button class="button primary">Create a link</button>
+				</form>
 
-					{#if data.invites.length > 0}
-						<h3>Links that have not been used</h3>
-						<ul class="people">
-							{#each data.invites as invite (invite.id)}
-								<li>
-									<div class="who">
-										<span class="name">To join as {invite.role}</span>
-										<span class="meta">
-											created {formatWhen(invite.createdAt)} · valid until {formatExact(
-												invite.expiresAt
-											)}
-										</span>
-									</div>
-									<form method="POST" action="?/revoke" use:enhance>
-										<input type="hidden" name="inviteId" value={invite.id} />
-										<button class="button small">Withdraw</button>
-									</form>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</section>
-
-				<section>
-					<h2>Name</h2>
-					<form method="POST" action="?/rename" use:enhance>
-						<div class="field">
-							<label for="workspace-name">Workspace name</label>
+				{#if link}
+					<div class="link" aria-live="polite">
+						<h3>Link to join as {link.role}</h3>
+						<p class="help">
+							Shown only now. Valid until {formatExact(link.expiresAt)}. Whoever opens it first with
+							an account joins, so send it privately.
+						</p>
+						<div class="copy">
 							<input
 								class="input"
-								id="workspace-name"
-								name="name"
-								required
-								maxlength="80"
-								autocomplete="off"
-								value={data.workspace.name}
+								readonly
+								value={link.url}
+								aria-label="Link"
+								onfocus={(event) => event.currentTarget.select()}
 							/>
+							<button class="button" type="button" onclick={() => copy(link.url)}>
+								{copied ? 'Copied' : 'Copy link'}
+							</button>
 						</div>
-						{#if messageFor('rename')}
-							<p class="form-error" role="alert">{messageFor('rename')}</p>
-						{/if}
-						<button class="button">Save name</button>
-					</form>
-				</section>
+					</div>
+				{/if}
+			</SettingsGroup>
 
-				<section>
-					<h2 class="danger-title">Delete workspace</h2>
-					<p class="help">
-						Only an empty workspace can be deleted: move its projects elsewhere or delete them
-						first. Its members lose nothing else.
-					</p>
-					{#if messageFor('delete')}
-						<p class="form-error" role="alert">{messageFor('delete')}</p>
+			<SettingsGroup
+				title="Links that have not been used"
+				description={data.invites.length === 0
+					? 'None at the moment.'
+					: 'Withdraw a link that should no longer let anyone in.'}
+			>
+				{#if data.invites.length > 0}
+					<ul class="people">
+						{#each data.invites as invite (invite.id)}
+							<li>
+								<div class="who">
+									<span class="name">To join as {invite.role}</span>
+									<span class="meta">
+										created {formatWhen(invite.createdAt)} · valid until {formatExact(
+											invite.expiresAt
+										)}
+									</span>
+								</div>
+								<form method="POST" action="?/revoke&section=invitations" use:enhance>
+									<input type="hidden" name="inviteId" value={invite.id} />
+									<button class="button small">Withdraw</button>
+								</form>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</SettingsGroup>
+		{:else}
+			<SettingsGroup title="Name">
+				<form method="POST" action="?/rename&section=settings" use:enhance>
+					<div class="field">
+						<label for="workspace-name">Workspace name</label>
+						<input
+							class="input"
+							id="workspace-name"
+							name="name"
+							required
+							maxlength="80"
+							autocomplete="off"
+							value={data.workspace.name}
+						/>
+					</div>
+					{#if messageFor('rename')}
+						<p class="form-error" role="alert">{messageFor('rename')}</p>
 					{/if}
-					<form method="POST" action="?/delete" use:enhance>
-						<button class="button danger" disabled={data.usage.projects > 0}>
-							Delete this workspace
-						</button>
-					</form>
-				</section>
-			{/if}
+					<button class="button">Save name</button>
+				</form>
+			</SettingsGroup>
+
+			<SettingsGroup
+				danger
+				title="Delete workspace"
+				description="Only an empty workspace can be deleted: move its projects elsewhere or delete them first. Its members lose nothing else."
+			>
+				{#if messageFor('delete')}
+					<p class="form-error" role="alert">{messageFor('delete')}</p>
+				{/if}
+				<form method="POST" action="?/delete&section=settings" use:enhance>
+					<button class="button danger" disabled={data.usage.projects > 0}>
+						Delete this workspace
+					</button>
+				</form>
+			</SettingsGroup>
 		{/if}
-	</div>
+	</SectionedPage>
 </AppShell>
 
 <style>
 	.where {
 		font-weight: 600;
-	}
-
-	.page {
-		display: grid;
-		gap: var(--s-5);
-		max-width: 46rem;
-		margin: 0 auto;
-		padding: var(--s-5) var(--s-5) var(--s-7);
-	}
-
-	.head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: start;
-		justify-content: space-between;
-		gap: var(--s-3);
-	}
-
-	.lede,
-	.help {
-		color: var(--ink-2);
-	}
-
-	.lede {
-		margin-top: var(--s-1);
-	}
-
-	.help {
-		font-size: var(--t-ui);
-	}
-
-	section {
-		display: grid;
-		gap: var(--s-3);
-		padding-top: var(--s-5);
-		border-top: 1px solid var(--rule);
-	}
-
-	h3 {
-		font-size: var(--t-ui);
-		font-weight: 600;
-	}
-
-	section > form {
-		display: grid;
-		gap: var(--s-3);
-		justify-items: start;
-	}
-
-	.field {
-		width: 100%;
-		max-width: 26rem;
 	}
 
 	.people {
@@ -413,15 +428,30 @@
 		font-size: var(--t-meta);
 	}
 
-	.danger-title {
-		color: var(--error);
+	.project {
+		display: flex;
+		align-items: center;
+		gap: var(--s-2);
+		min-width: 0;
+		color: inherit;
+		font-weight: 500;
+		text-decoration: none;
+	}
+
+	.project:hover span {
+		text-decoration: underline;
+	}
+
+	.project span {
+		overflow-wrap: anywhere;
+	}
+
+	.usage {
+		display: grid;
+		gap: var(--s-1);
 	}
 
 	@media (max-width: 640px) {
-		.page {
-			padding: var(--s-4) var(--s-4) var(--s-6);
-		}
-
 		.copy {
 			flex-direction: column;
 		}

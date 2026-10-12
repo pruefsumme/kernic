@@ -183,6 +183,10 @@ details.
   action, by typing a few letters.
 - Files can be dropped anywhere on the editor screen; images dropped or pasted into a Typst
   source are stored beside it and inserted at the cursor. Dropdowns match the other fields.
+- Settings pages in sections: the account, a workspace and a project's settings each list their
+  sections at the side (across the top on a phone) and show one at a time, as groups; the
+  address names the section, so a section can be linked to and survives a reload and a form.
+  Workspaces are cards, with their storage, and a workspace lists its projects.
 - Pushing checkpoints to a Git repository on a forge: an owner connects a project to a
   repository on a host the administrator allows, with an access token that is stored encrypted;
   editors push from the History panel, which shows how many checkpoints the repository lacks.

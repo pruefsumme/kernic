@@ -143,7 +143,7 @@
 					<Icon name="chevronDown" size={14} />
 				{/snippet}
 				<a role="menuitem" href="/account">Your account</a>
-				<a role="menuitem" href="/account#appearance">Appearance</a>
+				<a role="menuitem" href="/account?section=appearance">Appearance</a>
 				<a role="menuitem" href="/workspaces">Workspaces</a>
 				{#if user?.isAdmin}
 					<hr />

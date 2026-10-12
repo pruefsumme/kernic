@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from '@playwright/test';
 import { baseURL } from './environment.ts';
-import { appendSource, createProject, saveState, test } from './helpers.ts';
+import { appendSource, createProject, openSection, saveState, test } from './helpers.ts';
 
 /**
  * Shared workspaces, with two real accounts: the administrator who owns the
@@ -56,7 +56,7 @@ test('an owner creates a shared workspace with a project in it', async ({ page, 
 	theirs = await accountFor(page, browser);
 
 	await page.goto('/workspaces');
-	await page.getByLabel('Name').fill(workspaceName);
+	await page.getByLabel('New shared workspace').fill(workspaceName);
 	await page.getByRole('button', { name: 'Create workspace' }).click();
 	await expect(page.getByRole('heading', { name: workspaceName, level: 1 })).toBeVisible();
 	workspaceUrl = new URL(page.url()).pathname;
@@ -64,7 +64,7 @@ test('an owner creates a shared workspace with a project in it', async ({ page, 
 
 	// A project made in the personal workspace is moved into the shared one.
 	projectId = await createProject(page, 'Report', 'Group report');
-	await page.goto(`/projects/${projectId}/settings`);
+	await page.goto(`/projects/${projectId}/settings?section=sharing`);
 	await page.getByLabel('Move to').selectOption({ label: workspaceName });
 	await page.getByRole('button', { name: 'Move project' }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Moved' })).toBeVisible();
@@ -77,6 +77,7 @@ test('an owner creates a shared workspace with a project in it', async ({ page, 
 
 test('someone joins through a link, once, in the role it names', async ({ page }) => {
 	await page.goto(workspaceUrl);
+	await openSection(page, 'Invitations');
 	await page.getByLabel('They join as').selectOption('viewer');
 	await page.getByRole('button', { name: 'Create a link' }).click();
 	const link = await shownLink(page);
@@ -87,9 +88,12 @@ test('someone joins through a link, once, in the role it names', async ({ page }
 	await theirs.getByRole('button', { name: 'Join the workspace' }).click();
 	await expect(theirs.getByRole('heading', { name: workspaceName, level: 1 })).toBeVisible();
 	await expect(theirs.getByText('you are a viewer')).toBeVisible();
-	// A viewer sees who is there but has none of the owner's controls.
+	// A viewer sees the projects and who is there, but has none of the owner's sections.
+	await expect(theirs.getByRole('link', { name: 'Group report' })).toBeVisible();
+	await openSection(theirs, 'Members');
 	await expect(theirs.getByText(colleague.email)).toBeVisible();
-	await expect(theirs.getByRole('button', { name: 'Create a link' })).toHaveCount(0);
+	const theirSections = theirs.getByRole('navigation', { name: 'Sections' }).getByRole('link');
+	await expect(theirSections).toHaveText(['Overview', 'Members']);
 
 	// The link is spent.
 	await theirs.goto(link);
@@ -108,7 +112,7 @@ test('someone joins through a link, once, in the role it names', async ({ page }
 
 test('roles decide what a member may do, and removal ends access at once', async ({ page }) => {
 	// Made an editor, the colleague can write.
-	await page.goto(workspaceUrl);
+	await page.goto(`${workspaceUrl}?section=members`);
 	await page.getByLabel(`Role of ${colleague.name}`).selectOption('editor');
 	await expect(page.getByLabel(`Role of ${colleague.name}`)).toHaveValue('editor');
 	await expect.poll(async () => (await saveAs(theirs, 'An editor writes.')).status()).toBe(200);
@@ -145,7 +149,7 @@ test('roles decide what a member may do, and removal ends access at once', async
 	await expect(saveState(page)).toContainText('Saved');
 
 	// The workspace cannot lose its only owner, by leaving or by a change of role.
-	await page.goto(workspaceUrl);
+	await page.goto(`${workspaceUrl}?section=members`);
 	await page.getByRole('button', { name: 'Leave the workspace' }).click();
 	await expect(page.getByRole('alert')).toContainText('needs an owner');
 
@@ -167,10 +171,11 @@ test('roles decide what a member may do, and removal ends access at once', async
 });
 
 test('a workspace is deleted only when it is empty', async ({ page }) => {
-	await page.goto(workspaceUrl);
+	await page.goto(`${workspaceUrl}?section=settings`);
 	await expect(page.getByRole('button', { name: 'Delete this workspace' })).toBeDisabled();
 
 	// A link that was made but never used can be withdrawn.
+	await openSection(page, 'Invitations');
 	await page.getByRole('button', { name: 'Create a link' }).click();
 	const unused = await shownLink(page);
 	await page.reload();
@@ -180,12 +185,12 @@ test('a workspace is deleted only when it is empty', async ({ page }) => {
 	await expect(theirs.getByRole('heading', { name: 'This link is not valid' })).toBeVisible();
 
 	// The project goes back to the owner's own workspace; then the shared one can go.
-	await page.goto(`/projects/${projectId}/settings`);
+	await page.goto(`/projects/${projectId}/settings?section=sharing`);
 	await page.getByLabel('Move to').selectOption({ label: 'Your projects (only you)' });
 	await page.getByRole('button', { name: 'Move project' }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Moved' })).toBeVisible();
 
-	await page.goto(workspaceUrl);
+	await page.goto(`${workspaceUrl}?section=settings`);
 	await page.getByRole('button', { name: 'Delete this workspace' }).click();
 	await expect(page).toHaveURL('/workspaces');
 	await expect(page.getByText(workspaceName)).toHaveCount(0);

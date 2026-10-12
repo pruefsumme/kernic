@@ -47,6 +47,13 @@ export const loadedPages = (page: Page) => page.locator('.sheet[data-index] img'
 export const panel = (page: Page, name: 'Files' | 'Outline' | 'Issues' | 'History') =>
 	page.getByRole('complementary', { name });
 
+/** Opens one of the sections of a settings page, by its name in the list of sections. */
+export async function openSection(page: Page, name: string): Promise<void> {
+	const link = page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name });
+	await link.click();
+	await expect(link).toHaveAttribute('aria-current', 'page');
+}
+
 /** Types at the end of the open document. */
 export async function appendSource(page: Page, text: string): Promise<void> {
 	await page.locator('.cm-content').click();

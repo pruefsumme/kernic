@@ -289,7 +289,7 @@ test('a workspace cannot take more than its share of the storage', async ({ brow
 	expect(tooMuch.status()).toBe(413);
 
 	// The account page says where they stand.
-	await theirs.goto('/account');
+	await theirs.goto('/account?section=storage');
 	await expect(theirs.getByText(/48\.0 MB of 64\.0 MB/)).toBeVisible();
 
 	// Deleting makes room again.

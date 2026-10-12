@@ -2,6 +2,10 @@
 	import AppearanceSettings from '#lib/components/AppearanceSettings.svelte';
 	import { enhance } from '$app/forms';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import SectionedPage from '#lib/components/SectionedPage.svelte';
+	import { activeSection, type PageSection } from '#lib/components/sections.ts';
+	import SettingsGroup from '#lib/components/SettingsGroup.svelte';
+	import { page } from '$app/state';
 	import {
 		helpDestination,
 		projectsDestination,
@@ -15,6 +19,14 @@
 	const messageFor = (action: string) =>
 		form?.action === action && 'message' in form ? form.message : null;
 	const savedBy = (action: string) => form?.action === action && 'saved' in form;
+
+	const sections: PageSection[] = [
+		{ id: 'profile', label: 'Profile', icon: 'person' },
+		{ id: 'appearance', label: 'Appearance', icon: 'sun' },
+		{ id: 'security', label: 'Sign-in and security', icon: 'lock' },
+		{ id: 'storage', label: 'Storage', icon: 'storage' }
+	];
+	const active = $derived(activeSection(page.url, sections));
 
 	/** "Firefox on Linux" from a user-agent string; the raw string stays available as a tooltip. */
 	function describeDevice(userAgent: string | null): string {
@@ -55,171 +67,175 @@
 		<span class="where">Your account</span>
 	{/snippet}
 
-	<div class="page">
-		<div>
-			<h1>Your account</h1>
-			<p class="lede">
-				{data.account.email}{data.account.isAdmin ? ' · Administrator' : ''}
-			</p>
-		</div>
+	<SectionedPage heading="Your account" {sections} {active}>
+		{#snippet lede()}
+			{data.account.email}{data.account.isAdmin ? ' · Administrator' : ''}
+		{/snippet}
 
-		<section>
-			<h2>Name</h2>
-			<form method="POST" action="?/name" use:enhance>
-				<div class="field">
-					<label for="displayName">Shown on your checkpoints and to others</label>
-					<input
-						class="input"
-						id="displayName"
-						name="displayName"
-						required
-						maxlength="80"
-						autocomplete="name"
-						value={data.account.displayName}
-					/>
-				</div>
-				{#if messageFor('name')}<p class="field-error" role="alert">{messageFor('name')}</p>{/if}
-				<div class="row">
-					<button class="button primary">Save name</button>
-					{#if savedBy('name')}<span class="saved" role="status">Saved</span>{/if}
-				</div>
-			</form>
-		</section>
-
-		<section id="appearance">
-			<h2>Appearance</h2>
-			<AppearanceSettings initial={data.appearance} />
-		</section>
-
-		<section>
-			<h2>Storage</h2>
-			{#each data.workspaces as workspace (workspace.id)}
-				{@const share = Math.min(100, (workspace.usage.bytes / workspace.usage.maxBytes) * 100)}
-				<div class="usage">
-					<p>
-						<strong>{workspace.kind === 'personal' ? 'Your projects' : workspace.name}</strong>
-						<span>
-							{formatBytes(workspace.usage.bytes)} of {formatBytes(workspace.usage.maxBytes)} ·
-							{workspace.usage.projects} of {workspace.usage.maxProjects} projects
-						</span>
-					</p>
-					<meter
-						min="0"
-						max="100"
-						high="85"
-						value={share}
-						aria-label="Storage used in {workspace.kind === 'personal'
-							? 'your projects'
-							: workspace.name}"
-					></meter>
-				</div>
-			{/each}
-			<p class="hint">
-				Counts the files of your projects. Their version history and rendered pages are kept in
-				addition. The limits are set by whoever runs this server.
-			</p>
-		</section>
-
-		<section>
-			<h2>Password</h2>
-			<form
-				method="POST"
-				action="?/password"
-				use:enhance={() =>
-					async ({ update }) =>
-						update({ reset: true })}
+		{#if active === 'profile'}
+			<SettingsGroup
+				title="Name"
+				description="Shown on your checkpoints and to the people you share a workspace with."
 			>
-				<!-- Lets password managers attach the new password to the right account. -->
-				<input type="hidden" name="username" autocomplete="username" value={data.account.email} />
-				<div class="field">
-					<label for="currentPassword">Current password</label>
-					<input
-						class="input"
-						id="currentPassword"
-						name="currentPassword"
-						type="password"
-						required
-						autocomplete="current-password"
-					/>
-				</div>
-				<div class="field">
-					<label for="newPassword">New password</label>
-					<input
-						class="input"
-						id="newPassword"
-						name="newPassword"
-						type="password"
-						required
-						minlength="10"
-						autocomplete="new-password"
-						aria-describedby="newPassword-hint"
-					/>
-					<p class="hint" id="newPassword-hint">At least 10 characters.</p>
-				</div>
-				<div class="field">
-					<label for="repeatPassword">New password, again</label>
-					<input
-						class="input"
-						id="repeatPassword"
-						name="repeatPassword"
-						type="password"
-						required
-						autocomplete="new-password"
-					/>
-				</div>
-				{#if messageFor('password')}
-					<p class="field-error" role="alert">{messageFor('password')}</p>
-				{/if}
-				<div class="row">
-					<button class="button primary">Change password</button>
-					{#if savedBy('password')}
-						<span class="saved" role="status">
-							Password changed. Your other sessions were signed out.
-						</span>
+				<form method="POST" action="?/name&section=profile" use:enhance>
+					<div class="field">
+						<label for="displayName">Your name</label>
+						<input
+							class="input"
+							id="displayName"
+							name="displayName"
+							required
+							maxlength="80"
+							autocomplete="name"
+							value={data.account.displayName}
+						/>
+					</div>
+					{#if messageFor('name')}<p class="field-error" role="alert">{messageFor('name')}</p>{/if}
+					<div class="row">
+						<button class="button primary">Save name</button>
+						{#if savedBy('name')}<span class="saved" role="status">Saved</span>{/if}
+					</div>
+				</form>
+			</SettingsGroup>
+			<SettingsGroup
+				title="Email address"
+				description="You sign in with it. It cannot be changed here yet; an administrator of this server can help."
+			>
+				<p class="value">{data.account.email}</p>
+			</SettingsGroup>
+		{:else if active === 'appearance'}
+			<AppearanceSettings initial={data.appearance} />
+		{:else if active === 'security'}
+			<SettingsGroup
+				title="Password"
+				description="At least 10 characters. Changing it signs out your other sessions."
+			>
+				<form
+					method="POST"
+					action="?/password&section=security"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: true })}
+				>
+					<!-- Lets password managers attach the new password to the right account. -->
+					<input type="hidden" name="username" autocomplete="username" value={data.account.email} />
+					<div class="field">
+						<label for="currentPassword">Current password</label>
+						<input
+							class="input"
+							id="currentPassword"
+							name="currentPassword"
+							type="password"
+							required
+							autocomplete="current-password"
+						/>
+					</div>
+					<div class="field">
+						<label for="newPassword">New password</label>
+						<input
+							class="input"
+							id="newPassword"
+							name="newPassword"
+							type="password"
+							required
+							minlength="10"
+							autocomplete="new-password"
+							aria-describedby="newPassword-hint"
+						/>
+						<p class="hint" id="newPassword-hint">At least 10 characters.</p>
+					</div>
+					<div class="field">
+						<label for="repeatPassword">New password, again</label>
+						<input
+							class="input"
+							id="repeatPassword"
+							name="repeatPassword"
+							type="password"
+							required
+							autocomplete="new-password"
+						/>
+					</div>
+					{#if messageFor('password')}
+						<p class="field-error" role="alert">{messageFor('password')}</p>
 					{/if}
-				</div>
-			</form>
-		</section>
-
-		<section>
-			<h2>Where you are signed in</h2>
-			<p class="help">Sign out a session you do not recognise, then change your password.</p>
-			<ul class="sessions">
-				{#each data.sessions as session (session.id)}
-					<li>
-						<div>
-							<span class="device" title={session.userAgent}>
-								{describeDevice(session.userAgent)}
-								{#if session.current}<span class="tag">This session</span>{/if}
+					<div class="row">
+						<button class="button primary">Change password</button>
+						{#if savedBy('password')}
+							<span class="saved" role="status">
+								Password changed. Your other sessions were signed out.
 							</span>
-							<span class="meta">
-								Signed in <time
-									datetime={session.createdAt.toISOString()}
-									title={formatExact(session.createdAt)}>{formatWhen(session.createdAt)}</time
-								>
-								· last used
-								<time
-									datetime={session.lastSeenAt.toISOString()}
-									title={formatExact(session.lastSeenAt)}>{formatWhen(session.lastSeenAt)}</time
-								>
-							</span>
-						</div>
-						{#if !session.current}
-							<form method="POST" action="?/revoke" use:enhance>
-								<input type="hidden" name="sessionId" value={session.id} />
-								<button
-									class="button small"
-									aria-label="Sign out {describeDevice(session.userAgent)}"
-								>
-									Sign out
-								</button>
-							</form>
 						{/if}
-					</li>
+					</div>
+				</form>
+			</SettingsGroup>
+			<SettingsGroup
+				title="Where you are signed in"
+				description="Sign out a session you do not recognise, then change your password."
+			>
+				<ul class="sessions">
+					{#each data.sessions as session (session.id)}
+						<li>
+							<div>
+								<span class="device" title={session.userAgent}>
+									{describeDevice(session.userAgent)}
+									{#if session.current}<span class="tag">This session</span>{/if}
+								</span>
+								<span class="meta">
+									Signed in <time
+										datetime={session.createdAt.toISOString()}
+										title={formatExact(session.createdAt)}>{formatWhen(session.createdAt)}</time
+									>
+									· last used
+									<time
+										datetime={session.lastSeenAt.toISOString()}
+										title={formatExact(session.lastSeenAt)}>{formatWhen(session.lastSeenAt)}</time
+									>
+								</span>
+							</div>
+							{#if !session.current}
+								<form method="POST" action="?/revoke&section=security" use:enhance>
+									<input type="hidden" name="sessionId" value={session.id} />
+									<button
+										class="button small"
+										aria-label="Sign out {describeDevice(session.userAgent)}"
+									>
+										Sign out
+									</button>
+								</form>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			</SettingsGroup>
+		{:else}
+			<SettingsGroup
+				title="Storage"
+				description="Counts the files of your projects. Their version history and rendered pages are kept in addition. The limits are set by whoever runs this server."
+			>
+				{#each data.workspaces as workspace (workspace.id)}
+					{@const share = Math.min(100, (workspace.usage.bytes / workspace.usage.maxBytes) * 100)}
+					<div class="usage">
+						<p>
+							<strong>{workspace.kind === 'personal' ? 'Your projects' : workspace.name}</strong>
+							<span>
+								{formatBytes(workspace.usage.bytes)} of {formatBytes(workspace.usage.maxBytes)} ·
+								{workspace.usage.projects} of {workspace.usage.maxProjects} projects
+							</span>
+						</p>
+						<meter
+							min="0"
+							max="100"
+							high="85"
+							value={share}
+							aria-label="Storage used in {workspace.kind === 'personal'
+								? 'your projects'
+								: workspace.name}"
+						></meter>
+					</div>
 				{/each}
-			</ul>
-		</section>
-	</div>
+			</SettingsGroup>
+		{/if}
+	</SectionedPage>
 </AppShell>
 
 <style>
@@ -242,91 +258,8 @@
 		font-size: var(--t-meta);
 	}
 
-	meter {
-		width: 100%;
-		height: 0.5rem;
-		border: 0;
-		border-radius: 1rem;
-		background: var(--sunken);
-		appearance: none;
-	}
-
-	meter::-webkit-meter-bar {
-		height: 0.5rem;
-		border: 0;
-		border-radius: 1rem;
-		background: var(--sunken);
-	}
-
-	meter::-webkit-meter-optimum-value {
-		border-radius: 1rem;
-		background: var(--accent);
-	}
-
-	meter::-webkit-meter-suboptimum-value,
-	meter::-webkit-meter-even-less-good-value {
-		border-radius: 1rem;
-		background: var(--warning);
-	}
-
-	meter::-moz-meter-bar {
-		border-radius: 1rem;
-		background: var(--accent);
-	}
-
-	meter:-moz-meter-sub-optimum::-moz-meter-bar {
-		background: var(--warning);
-	}
-
 	.where {
 		font-weight: 600;
-	}
-
-	.page {
-		display: grid;
-		gap: var(--s-5);
-		max-width: 40rem;
-		margin: 0 auto;
-		padding: var(--s-5) var(--s-5) var(--s-7);
-	}
-
-	.lede {
-		margin-top: var(--s-1);
-		color: var(--ink-2);
-		overflow-wrap: anywhere;
-	}
-
-	section {
-		display: grid;
-		gap: var(--s-3);
-		padding-top: var(--s-5);
-		border-top: 1px solid var(--rule);
-	}
-
-	form {
-		display: grid;
-		gap: var(--s-3);
-	}
-
-	.field {
-		max-width: 26rem;
-	}
-
-	.help {
-		color: var(--ink-2);
-		font-size: var(--t-ui);
-	}
-
-	.row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: var(--s-3);
-	}
-
-	.saved {
-		color: var(--ink-2);
-		font-size: var(--t-ui);
 	}
 
 	.sessions {
@@ -373,9 +306,8 @@
 		font-weight: 500;
 	}
 
-	@media (max-width: 640px) {
-		.page {
-			padding: var(--s-4) var(--s-3) var(--s-6);
-		}
+	.value {
+		font-weight: 500;
+		overflow-wrap: anywhere;
 	}
 </style>
