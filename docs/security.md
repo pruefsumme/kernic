@@ -34,6 +34,14 @@ signed-in user's files, and everything fetched from outside (packages).
   workspace are refused; the owner's files and history are unchanged afterwards
   (`e2e/authorization.spec.ts`).
 - **Tested:** a disabled account loses its session on the next request and cannot sign in.
+- Shared workspaces: several people reach the same projects, each in a role (viewer, editor,
+  owner) that is looked up for every request. People join through single-use links that an
+  owner creates; only a hash of a link is stored, and ownership is never handed out by link.
+  A workspace always keeps an owner. **Tested** with two accounts
+  (`e2e/workspaces.spec.ts`): before joining, the project and the workspace answer "not
+  found"; a viewer can open but not save; made an editor, they can; a link works once and can
+  be withdrawn; an editor cannot manage members; the last owner cannot leave; a removed member
+  loses the project and the workspace on their next request.
 
 ### Sign-in and sessions
 

@@ -1,6 +1,10 @@
 <script lang="ts">
 	import AppShell from '#lib/components/AppShell.svelte';
-	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
+	import {
+		helpDestination,
+		projectsDestination,
+		workspacesDestination
+	} from '#lib/components/rail.ts';
 	import { formatExact } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
@@ -21,7 +25,14 @@
 		'account.reset-link-created': 'Created a password reset link for',
 		'project.deleted': 'Deleted the project',
 		'project.restored': 'Restored a version of',
-		'project.imported': 'Imported the project'
+		'project.imported': 'Imported the project',
+		'project.moved': 'Moved to another workspace the project',
+		'workspace.created': 'Created the shared workspace',
+		'workspace.deleted': 'Deleted the shared workspace',
+		'workspace.invite-created': 'Created a link to join the workspace',
+		'workspace.member-joined': 'Joined the workspace',
+		'workspace.member-removed': 'Removed a member from, or left, the workspace',
+		'workspace.role-changed': 'Changed a role in the workspace'
 	};
 
 	let filter = $state('');
@@ -42,7 +53,10 @@
 	<title>Activity log · Kernic</title>
 </svelte:head>
 
-<AppShell destinations={[projectsDestination(false)]} footer={[helpDestination]}>
+<AppShell
+	destinations={[projectsDestination(false), workspacesDestination(false)]}
+	footer={[helpDestination]}
+>
 	{#snippet title()}
 		<span class="where">Activity log</span>
 	{/snippet}

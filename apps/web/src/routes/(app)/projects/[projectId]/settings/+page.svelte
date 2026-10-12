@@ -112,6 +112,40 @@
 		</section>
 
 		<section>
+			<h2>Workspace</h2>
+			<p class="help">
+				This project is in <strong>{data.workspace.name}</strong>. Everyone in a workspace can open
+				its projects; what they may do depends on their role there.
+				<a href="/workspaces/{data.workspace.id}">See who that is.</a>
+			</p>
+			{#if data.isOwner && data.moveTargets.length > 0}
+				<form method="POST" action="?/move" use:enhance>
+					<div class="field">
+						<label for="workspace">Move to</label>
+						<select class="input" id="workspace" name="workspace">
+							{#each data.moveTargets as target (target.id)}
+								<option value={target.id}>{target.name}</option>
+							{/each}
+						</select>
+					</div>
+					<p class="help">
+						The people of the workspace it leaves lose access to it, and the people of the one it
+						goes to gain it. Files and history move with it.
+					</p>
+					{#if messageFor('move')}<p class="field-error" role="alert">{messageFor('move')}</p>{/if}
+					<div class="row">
+						<button class="button">Move project</button>
+						{#if savedBy('move')}<span class="saved" role="status">Moved</span>{/if}
+					</div>
+				</form>
+			{:else if data.isOwner}
+				<p class="help">
+					To share it, <a href="/workspaces">create a shared workspace</a> and move it there.
+				</p>
+			{/if}
+		</section>
+
+		<section>
 			<h2>Backup</h2>
 			<p class="help">
 				Download every file of this project as a ZIP archive, with the same folder layout. The

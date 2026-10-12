@@ -5,7 +5,11 @@
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import TemplatePicker from '#lib/components/TemplatePicker.svelte';
-	import { helpDestination, projectsDestination } from '#lib/components/rail.ts';
+	import {
+		helpDestination,
+		projectsDestination,
+		workspacesDestination
+	} from '#lib/components/rail.ts';
 	import { formatExact, formatWhen } from '#lib/format.ts';
 	import type { PageProps } from './$types';
 
@@ -65,7 +69,10 @@
 	<title>Projects · Kernic</title>
 </svelte:head>
 
-<AppShell destinations={[projectsDestination(true)]} footer={[helpDestination]}>
+<AppShell
+	destinations={[projectsDestination(true), workspacesDestination(false)]}
+	footer={[helpDestination]}
+>
 	{#snippet title()}
 		<span class="where">Projects</span>
 	{/snippet}
