@@ -16,6 +16,8 @@ test.beforeAll(async () => {
 		() => ({ editorAssistance: false })
 	);
 	offered = health.editorAssistance === true;
+	// Skipping is for machines without Tinymist; a pipeline has to have it.
+	if (process.env.CI) expect(offered, 'the worker offers editor assistance').toBe(true);
 });
 
 test('functions of the project are completed, documented and found', async ({ page }) => {

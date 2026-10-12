@@ -27,6 +27,12 @@ const connect = () =>
 const first: Migration = { name: '0001_first', sql: 'CREATE TABLE notes (id int PRIMARY KEY)' };
 const second: Migration = { name: '0002_second', sql: 'ALTER TABLE notes ADD COLUMN body text' };
 
+// Without a database these tests are skipped on a developer's machine, but a
+// pipeline that skipped them would report success for nothing.
+if (!reachable && process.env.CI) {
+	throw new Error(`The test database at ${databaseUrl} is not reachable.`);
+}
+
 describe.skipIf(!reachable)('migrate', () => {
 	let sql: Sql;
 
