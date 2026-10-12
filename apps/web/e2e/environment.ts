@@ -7,6 +7,7 @@ import path from 'node:path';
 export const appPort = 5183;
 export const workerPort = 3183;
 export const registryPort = 4183;
+export const forgePort = 4184;
 
 /**
  * Set KERNIC_E2E_BASE_URL to run the suite against an already running, freshly
@@ -23,6 +24,11 @@ export const workerDir = path.join(tmpdir(), 'kernic-e2e-worker');
 
 export const setupToken = process.env.KERNIC_E2E_SETUP_TOKEN ?? 'e2e-setup-token';
 export const workerToken = 'e2e-worker-token-e2e-worker-token';
+
+/** The stand-in Git forge of the tests, and tokens it knows. */
+export const forgeOrigin = `http://127.0.0.1:${forgePort}`;
+export const forgeToken = 'e2e-forge-token-that-may-write';
+export const forgeReadOnlyToken = 'e2e-forge-token-that-may-read';
 
 export const admin = {
 	name: 'Ada Lovelace',

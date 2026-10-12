@@ -85,6 +85,28 @@ export interface UploadResult {
 	message?: string;
 }
 
+/** The Git repository a project's checkpoints are pushed to. */
+export interface RemoteStatus {
+	url: string;
+	branch: string;
+	lastPushedAt: Date | null;
+	/** Checkpoints the repository does not have yet. */
+	unpushed: number;
+}
+
+interface RemoteStatusBody {
+	remote: { url: string; branch: string; lastPushedAt: string | null };
+	unpushed: number;
+}
+
+const toRemoteStatus = (body: RemoteStatusBody | null): RemoteStatus | null =>
+	body && {
+		url: body.remote.url,
+		branch: body.remote.branch,
+		lastPushedAt: body.remote.lastPushedAt ? new Date(body.remote.lastPushedAt) : null,
+		unpushed: body.unpushed
+	};
+
 export class ApiError extends Error {
 	readonly status: number;
 	/** Machine-readable reason from the server, e.g. `conflict`. */
@@ -284,11 +306,13 @@ export function createProjectApi(projectId: string) {
 			checkpoints: Checkpoint[];
 			snapshots: Snapshot[];
 			changes: Change[];
+			remote: RemoteStatus | null;
 		}> {
 			const body = (await (await request(`${base}/history`)).json()) as {
 				checkpoints: (Omit<Checkpoint, 'createdAt'> & { createdAt: string })[];
 				snapshots: { id: string; createdAt: string }[];
 				changes: Change[];
+				remote: RemoteStatusBody | null;
 			};
 			const withDate = <T extends { createdAt: string }>(item: T) => ({
 				...item,
@@ -296,6 +320,7 @@ export function createProjectApi(projectId: string) {
 			});
 			return {
 				changes: body.changes,
+				remote: toRemoteStatus(body.remote),
 				checkpoints: body.checkpoints.map(withDate),
 				snapshots: body.snapshots.map(withDate)
 			};
@@ -303,6 +328,14 @@ export function createProjectApi(projectId: string) {
 
 		async createCheckpoint(message: string): Promise<void> {
 			await request(`${base}/history`, json({ message }));
+		},
+
+		/** Pushes the checkpoints to the project's repository and returns where that stands now. */
+		async push(): Promise<RemoteStatus | null> {
+			const body = (await (await request(`${base}/history/push`, json({}))).json()) as {
+				remote: RemoteStatusBody | null;
+			};
+			return toRemoteStatus(body.remote);
 		},
 
 		/** Changes of a checkpoint, since a snapshot, or of the current files with `working`. */

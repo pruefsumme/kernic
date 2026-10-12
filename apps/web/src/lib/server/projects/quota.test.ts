@@ -8,7 +8,9 @@ vi.mock('$app/env/private', () => ({
 	KERNIC_MAX_PROJECT_FILES: 1,
 	KERNIC_MAX_WORKSPACE_MB: 1,
 	KERNIC_MAX_WORKSPACE_PROJECTS: 1,
-	KERNIC_MAX_WAITING_COMPILES: 1
+	KERNIC_MAX_WAITING_COMPILES: 1,
+	KERNIC_GIT_HOSTS: '',
+	KERNIC_SECRET_KEY: ''
 }));
 
 const { roomProblem } = await import('./projects');

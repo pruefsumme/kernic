@@ -119,6 +119,24 @@ test('roles decide what a member may do, and removal ends access at once', async
 		form: { lifetime: '7' }
 	});
 	expect(sharing.status()).toBe(403);
+	// So is giving the server a token for a repository elsewhere. Pushing is for whoever may
+	// write: the editor gets as far as "not connected", a viewer later does not.
+	const connecting = await theirs.request.post(`/projects/${projectId}/settings?/connect`, {
+		headers: { origin: baseURL },
+		form: { url: 'https://git.example.org/mary/own.git', token: 'a-token-of-the-colleague' }
+	});
+	expect(connecting.status()).toBe(403);
+	const pushAs = (who: Page) =>
+		who.request.post(`/api/projects/${projectId}/history/push`, {
+			headers: { origin: baseURL, 'content-type': 'application/json' },
+			data: {}
+		});
+	expect((await pushAs(theirs)).status()).toBe(409);
+	await page.getByLabel(`Role of ${colleague.name}`).selectOption('viewer');
+	await expect(page.getByLabel(`Role of ${colleague.name}`)).toHaveValue('viewer');
+	await expect.poll(async () => (await pushAs(theirs)).status()).toBe(403);
+	await page.getByLabel(`Role of ${colleague.name}`).selectOption('editor');
+	await expect(page.getByLabel(`Role of ${colleague.name}`)).toHaveValue('editor');
 
 	// Both see the same file; the owner's editor shows the colleague's text.
 	await page.goto(`/projects/${projectId}?file=shared-note.typ`);
@@ -143,6 +161,7 @@ test('roles decide what a member may do, and removal ends access at once', async
 	await expect(page.getByText(colleague.email)).toHaveCount(0);
 	expect((await theirs.request.get(`/api/projects/${projectId}/tree`)).status()).toBe(404);
 	expect((await saveAs(theirs, 'After removal.')).status()).toBe(404);
+	expect((await pushAs(theirs)).status()).toBe(404);
 	await theirs.goto('/');
 	await expect(theirs.getByRole('link', { name: /Group report/ })).toHaveCount(0);
 });

@@ -90,6 +90,16 @@ export const variables = defineEnvVars({
 		description: 'Largest number of projects in one workspace',
 		schema: count('KERNIC_MAX_WORKSPACE_PROJECTS', 200)
 	},
+	KERNIC_GIT_HOSTS: {
+		description:
+			'Hosts whose Git repositories projects may be connected to, separated by commas; unset turns this off',
+		schema: (value) => value || ''
+	},
+	KERNIC_SECRET_KEY: {
+		description:
+			'Key that encrypts stored access tokens, at least 32 characters; required with KERNIC_GIT_HOSTS',
+		schema: (value) => value || ''
+	},
 	KERNIC_MAX_WAITING_COMPILES: {
 		description: 'Most compiles one account may have waiting or running at the same time',
 		schema: count('KERNIC_MAX_WAITING_COMPILES', 20)

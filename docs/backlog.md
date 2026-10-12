@@ -46,8 +46,8 @@ Jumps between page and source are in place (see "Done"). What is left of this it
 
 ### 2. Readiness for more than one app process
 
-The per-project lock, the sign-in attempt counters and the editor-assistance connections live in
-the memory of the one app process. For several app instances behind a load balancer: PostgreSQL
+The per-project lock, the sign-in attempt counters, the editor-assistance connections and the
+note that a push is under way live in the memory of the one app process. For several app instances behind a load balancer: PostgreSQL
 advisory locks for the project lock, a small table for the counters, and connections that any
 instance can serve. No broker is needed for this. Until then the documentation says "one app
 instance".
@@ -86,9 +86,21 @@ verify any either. Authenticity rests on HTTPS to the registry.
 
 ### 5. Git remotes (Gitea/Forgejo)
 
-Connect a project to a repository on a forge: push checkpoints, pull and merge changes made
-elsewhere, import a project by cloning. Allow-listed hosts, scoped tokens stored as secrets, no
-hooks, limits on size and time, Git run outside the compile worker.
+Pushing checkpoints to a repository is in place (see "Done"). Still to build, in this order:
+
+- Pull: fetch what the repository's branch has and the project does not. Fast-forward when the
+  project has nothing of its own; otherwise a three-way merge computed without touching the
+  files (`git merge-tree`), applied only when it is clean, and for conflicts a choice per file
+  between the two versions. What comes in is checked like an upload: paths, sizes, no links,
+  the workspace's room. Until then a push to a branch with other commits is refused.
+- Create a project from a repository (clone), through the same checks and the dry run of the
+  ZIP import.
+- Push automatically after each checkpoint, as an option, with a visible state when the forge
+  could not be reached.
+- Changing the branch or the token without disconnecting; a proxy for outgoing connections;
+  SSH addresses with a key per project.
+- Not verified: Gitea, GitLab and GitHub (the protocol is the same; only Forgejo 13 and the
+  stand-in forge of the tests were tried), and pushing a history of several hundred megabytes.
 
 ### 6. Real-time collaboration
 
@@ -171,6 +183,10 @@ details.
   action, by typing a few letters.
 - Files can be dropped anywhere on the editor screen; images dropped or pasted into a Typst
   source are stored beside it and inserted at the cursor. Dropdowns match the other fields.
+- Pushing checkpoints to a Git repository on a forge: an owner connects a project to a
+  repository on a host the administrator allows, with an access token that is stored encrypted;
+  editors push from the History panel, which shows how many checkpoints the repository lacks.
+  A push only adds and never follows a redirect. Tried against Forgejo 13.0.5.
 - Jumps between page and source: a click on a page opens the place in the source that printed
   it (a click beside the text means the nearest text), and Ctrl+J or the button above the
   preview scrolls to the cursor's place on the pages and marks it. A place that prints nothing

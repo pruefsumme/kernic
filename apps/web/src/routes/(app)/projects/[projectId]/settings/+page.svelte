@@ -12,6 +12,12 @@
 		form?.action === action && 'message' in form ? form.message : null;
 	const savedBy = (action: string) => form?.action === action && 'saved' in form;
 	let confirmName = $state('');
+	/** What was typed into the repository form when it was refused; the token is not among it. */
+	const entered = $derived(
+		form?.action === 'connect' && 'entered' in form
+			? (form.entered as { url: string; branch: string; username: string })
+			: null
+	);
 
 	const link = $derived(form?.action === 'share' && 'link' in form ? form.link : null);
 	let copied = $state(false);
@@ -232,6 +238,119 @@
 		{/if}
 
 		<section>
+			<h2>Git repository</h2>
+			{#if data.remote}
+				<p class="help">
+					The checkpoints of this project can be pushed to
+					<strong class="address">{data.remote.url}</strong>, branch
+					<strong>{data.remote.branch}</strong>, from the History panel of the editor.
+					{#if data.remote.lastPushedAt}
+						Last pushed {formatWhen(data.remote.lastPushedAt)}.
+					{:else}
+						Nothing has been pushed yet.
+					{/if}
+				</p>
+				{#if data.isOwner}
+					<form method="POST" action="?/disconnect" use:enhance>
+						<p class="help">
+							Disconnecting removes the access token from this server. The repository and what was
+							pushed to it stay as they are.
+						</p>
+						{#if messageFor('disconnect')}
+							<p class="field-error" role="alert">{messageFor('disconnect')}</p>
+						{/if}
+						<div class="row">
+							<button class="button">Disconnect</button>
+						</div>
+					</form>
+				{/if}
+			{:else if data.remoteHosts.length === 0}
+				<p class="help">
+					A project can push its checkpoints to a Git repository on a forge such as Forgejo or
+					Gitea. This server is not set up for that: its administrator has to name the hosts it may
+					connect to.
+				</p>
+			{:else if !data.isOwner}
+				<p class="help">
+					This project is not connected to a Git repository. An owner of the workspace can connect
+					it.
+				</p>
+			{:else}
+				<p class="help">
+					Push the checkpoints of this project to a repository on
+					{#each data.remoteHosts as host, index (host)}{index > 0
+							? index === data.remoteHosts.length - 1
+								? ' or '
+								: ', '
+							: ''}<strong>{host}</strong>{/each}. Create an empty repository there and an access
+					token that may write to it. Checkpoints carry the names and e-mail addresses of the people
+					who made them; whoever can read the repository can read those too.
+				</p>
+				<form method="POST" action="?/connect" use:enhance>
+					<div class="field">
+						<label for="remote-url">Address of the repository</label>
+						<input
+							class="input"
+							id="remote-url"
+							name="url"
+							type="url"
+							required
+							autocomplete="off"
+							spellcheck="false"
+							placeholder="https://{data.remoteHosts[0]?.replace(/^http:\/\//, '')}/you/thesis.git"
+							value={entered?.url ?? ''}
+						/>
+					</div>
+					<div class="field">
+						<label for="remote-branch">Branch</label>
+						<input
+							class="input"
+							id="remote-branch"
+							name="branch"
+							autocomplete="off"
+							spellcheck="false"
+							placeholder="main"
+							value={entered?.branch ?? ''}
+						/>
+					</div>
+					<div class="field">
+						<label for="remote-username">User name on the forge (optional)</label>
+						<input
+							class="input"
+							id="remote-username"
+							name="username"
+							autocomplete="off"
+							spellcheck="false"
+							value={entered?.username ?? ''}
+						/>
+					</div>
+					<div class="field">
+						<label for="remote-token">Access token</label>
+						<input
+							class="input"
+							id="remote-token"
+							name="token"
+							type="password"
+							required
+							autocomplete="off"
+							aria-describedby="remote-token-hint"
+						/>
+						<p class="hint" id="remote-token-hint">
+							Stored encrypted on this server and never shown again. Give it no more than write
+							access to this one repository if the forge allows that.
+						</p>
+					</div>
+					{#if messageFor('connect')}
+						<p class="field-error" role="alert">{messageFor('connect')}</p>
+					{/if}
+					<div class="row">
+						<button class="button">Connect</button>
+					</div>
+				</form>
+			{/if}
+		</section>
+
+		<section>
 			<h2>Backup</h2>
 			<p class="help">
 				Download every file of this project as a ZIP archive, with the same folder layout. The
@@ -296,6 +415,11 @@
 
 	.copy .input {
 		font-size: var(--t-meta);
+	}
+
+	/* An address is long and has no spaces: let it break anywhere rather than widen the page. */
+	.address {
+		overflow-wrap: anywhere;
 	}
 
 	.shares {
