@@ -52,6 +52,12 @@ jobs:
             echo "The tag $GITHUB_REF_NAME does not match the version $version in the code."
             exit 1
           }
+          # The release notes are made from CHANGELOG.md, and people read its upgrade notes
+          # before upgrading: a release without them is not ready.
+          scripts/changelog-section.sh "$version" --upgrade-notes > /dev/null || {
+            echo "CHANGELOG.md has no section '## $version' with an '**Upgrade notes**' list (write 'none' if there is nothing to do)."
+            exit 1
+          }
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -256,6 +262,10 @@ jobs:
           tags: |
             ${{ steps.names.outputs.app }}:${{ steps.names.outputs.version }}
             ${{ steps.names.outputs.latest == 'true' && format('{0}:latest', steps.names.outputs.app) || '' }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.names.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=app
           cache-to: type=gha,scope=app,mode=max
       - name: Publish the worker image
@@ -268,5 +278,32 @@ jobs:
           tags: |
             ${{ steps.names.outputs.worker }}:${{ steps.names.outputs.version }}
             ${{ steps.names.outputs.latest == 'true' && format('{0}:latest', steps.names.outputs.worker) || '' }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.names.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,scope=worker,mode=max
+
+  release:
+    # The page people watch for new versions, with what the changelog says about this one.
+    # Only once the images exist, so that nobody is told about a version they cannot pull.
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Make the release from the changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/changelog-section.sh "$version" > "$RUNNER_TEMP/notes.md"
+          # A pre-release (0.2.0-rc1) is marked as one.
+          case "$version" in *-*) flag="--prerelease" ;; *) flag="--latest" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Kernic $version" \
+            --notes-file "$RUNNER_TEMP/notes.md" "$flag"

@@ -72,9 +72,12 @@ verify any either. Authenticity rests on HTTPS to the registry.
 
 ### 4. Checks not yet exercised
 
-- An upgrade test in the pipeline: start the previous release's images with data, upgrade, and
-  run the suite. It needs an earlier release to upgrade from, so it can be written once 0.1.0
-  is out and run for 0.2.0.
+- An upgrade test in the pipeline: start the previous release's images with data, upgrade with
+  `deploy/upgrade.sh --yes`, and run the suite; and the way back (the old image refuses the
+  upgraded database, `restore.sh` of the `pre-upgrade` backup brings it back). 0.1.0 exists now, so
+  it can be written, and run for the first release after 0.1.0 (the 0.1.0 images lack the
+  `/app/release` files `upgrade.sh` reads, so the first run of it shows what an upgrade from them
+  is like). `upgrade.sh` itself has been tried only on a stack of the same version.
 - Publishing images: done for tags (see "Done"); the first publication is the proof.
 - ARM64: the images are built under emulation for tags and on request; the test suites have
   not run on ARM64 hardware.

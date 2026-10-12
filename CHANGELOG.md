@@ -25,6 +25,18 @@
 - The pipeline sends backups to a disk, through rclone and to an S3 server and restores from each.
   Not tested against the real services, nor with SSH.
 
+**Upgrading**
+- `deploy/upgrade.sh` checks, builds or pulls, shows the version, the database migrations and the
+  upgrade notes, makes a `pre-upgrade` backup (sent off the machine if that is set up), starts the
+  new version and, if that fails, prints the way back. The Upgrade section of the guide is
+  rewritten: pin the version, check out the files of the version you run, keep your own changes in
+  `compose.override.yaml`, how to go back.
+- A release now creates a GitHub Release from this file (subscribe to its feed to hear of
+  versions), the images carry the standard version, source and revision labels, and the pipeline
+  refuses a tag whose version has no **Upgrade notes** here. `docs/releasing.md` lists the steps.
+- A backup records the version of the app that is running, so a `pre-upgrade` backup names the
+  version it can be restored with.
+
 **Upgrade notes**
 - The backup folder holds `projects.tar` (not compressed) instead of `projects.tar.gz`, and is
   bigger as a result. Backups of the older kind can still be restored.
