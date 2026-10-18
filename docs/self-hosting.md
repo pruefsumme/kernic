@@ -459,5 +459,5 @@ What the deployment does, and what it relies on you for.
 - **Your part.** Keep `deploy/.env` private, serve Kernic over HTTPS, keep Docker and the host
   updated, and keep backups somewhere else.
 
-A full security and reliability review is planned (see the [backlog](backlog.md)); until it is
-done, expose an installation only to people you trust.
+Kernic has not had an independent security audit yet; until it has, expose an installation only
+to people you trust.
