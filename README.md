@@ -16,6 +16,10 @@ Write multi-file Typst documents in the browser, see the pages render next to th
 
 </div>
 
+<br>
+
+![The Kernic editor: file tree, Typst source and the rendered page side by side](docs/images/editor.png)
+
 ## Features
 
 - **Editor:** multi-file projects, syntax highlighting, completion, hover docs, go to definition and formatting through Tinymist
