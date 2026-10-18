@@ -33,7 +33,7 @@
   `compose.override.yaml`, how to go back.
 - A release now creates a GitHub Release from this file (subscribe to its feed to hear of
   versions), the images carry the standard version, source and revision labels, and the pipeline
-  refuses a tag whose version has no **Upgrade notes** here. `docs/releasing.md` lists the steps.
+  refuses a tag whose version has no **Upgrade notes** here.
 - A backup records the version of the app that is running, so a `pre-upgrade` backup names the
   version it can be restored with.
 
@@ -83,7 +83,7 @@ has not yet had long use by real people on a real server.
 - Docker Compose deployment (proxy, app, isolated worker, PostgreSQL) for x86-64 and ARM64,
   `deploy/preflight.sh`, backup and restore scripts, published images.
 
-**Known limits** (details in `docs/backlog.md` and `docs/security.md`)
+**Known limits**
 - One app process: several instances behind a load balancer are not supported yet.
 - No real-time collaboration: two people in one file get a conflict warning, not a merge.
 - The preview follows a pause in typing of 0.4 s, not each keystroke.
